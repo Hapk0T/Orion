@@ -55,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("diagnostics", help="Запуск диагностических тестов")
 
+    tools_parser = sub.add_parser("tools", help="Просмотр и тестирование инструментов")
+    tools_parser.add_argument("action", nargs="?", default="list", help="list или test <tool_name>")
+    tools_parser.add_argument("tool_name", nargs="?", help="Имя инструмента для теста")
+    tools_parser.add_argument("tool_args", nargs="*", help="Аргументы инструмента")
+
     sub.add_parser("training-status", help="Просмотр статуса обучения и версий модели")
 
     return parser

@@ -99,6 +99,20 @@ def run_cli(args: Any, config: Config) -> int:
             backend.load(None)
         memory = SqliteMemoryStore(config.db_path)
         registry = ToolRegistry()
+
+        # Регистрация встроенных инструментов
+        from adaptive_ai.tools.builtin.calculator import CalculatorTool
+        from adaptive_ai.tools.builtin.python_calc import PythonCalcTool
+        from adaptive_ai.tools.builtin.read_file import ReadFileTool
+        from adaptive_ai.tools.builtin.run_tests import RunTestsTool
+        from adaptive_ai.tools.builtin.search_memory import SearchMemoryTool
+
+        registry.register(SearchMemoryTool(memory))
+        registry.register(CalculatorTool())
+        registry.register(PythonCalcTool())
+        registry.register(ReadFileTool(allowed_dirs=[str(config.data_dir), str(config.models_dir)]))
+        registry.register(RunTestsTool(allowed_dirs=[str(config.data_dir)]))
+
         from adaptive_ai.core.error_monitor import ErrorMonitor
         from adaptive_ai.core.guard_engine import GuardEngine
         from adaptive_ai.core.policies import SafetyPolicy, ResourcePolicy
@@ -145,6 +159,8 @@ def run_cli(args: Any, config: Config) -> int:
         return _not_supported("mem-clear (архивация)")
     if cmd == "diagnostics":
         return _cmd_diagnostics(orch)
+    if cmd == "tools":
+        return _cmd_tools(orch, args)
     if cmd == "training-status":
         return _cmd_training_status(config)
 
@@ -289,6 +305,41 @@ def _cmd_mem_view(orch: Orchestrator, args: Any) -> int:
     print(f"Создано: {item.created_at}")
     print(f"Теги: {', '.join(item.tags)}")
     return 0
+
+
+def _cmd_tools(orch: Orchestrator, args: Any) -> int:
+    action = args.action or "list"
+    if action == "list":
+        print("=== Зарегистрированные инструменты ===")
+        for tool in orch.tools.list():
+            print(f"  {tool.name}: {tool.description}")
+            print(f"    Вход: {tool.input_schema}")
+            print(f"    Разрешения: {tool.required_permissions}")
+            print(f"    Макс. время: {tool.max_time_seconds}с, Макс. RAM: {tool.max_memory_mb}MB")
+        return 0
+    if action == "test":
+        tool_name = args.tool_name
+        if not tool_name:
+            print("Укажите имя инструмента: tools test <name> [args...]")
+            return 1
+        tool = orch.tools.get(tool_name)
+        if not tool:
+            print(f"Инструмент не найден: {tool_name}")
+            return 1
+        # Парсим аргументы key=value
+        tool_args = {}
+        for arg in (args.tool_args or []):
+            if "=" in arg:
+                k, v = arg.split("=", 1)
+                tool_args[k] = v
+        result = orch.tools.call(tool_name, tool_args)
+        if result.status == "ok":
+            print(f"Результат: {result.data}")
+        else:
+            print(f"Статус: {result.status}. Ошибка: {result.error}")
+        return 0
+    print(f"Неизвестное действие: {action}. Используйте 'list' или 'test'.")
+    return 1
 
 
 def _cmd_diagnostics(orch: Orchestrator) -> int:
