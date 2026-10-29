@@ -24,6 +24,18 @@ class Config:
     model_backend: str = _env("ADAPTIVE_AI_MODEL_BACKEND", "rwkv_cpp")
     model_path: str | None = _env("ADAPTIVE_AI_MODEL_PATH", None) or None
 
+    # Автовыбор модели, если путь не указан
+    def __post_init__(self) -> None:
+        if self.model_path is None:
+            try:
+                from adaptive_ai.models.model_selector import select_best_model
+
+                best = select_best_model(self.models_dir, ram_budget_ratio=0.8)
+                if best is not None:
+                    self.model_path = best.path
+            except Exception:  # noqa: BLE001
+                pass
+
     # Оркестратор
     max_steps: int = int(_env("ADAPTIVE_AI_MAX_STEPS", "8"))
     max_retries: int = int(_env("ADAPTIVE_AI_MAX_RETRIES", "2"))

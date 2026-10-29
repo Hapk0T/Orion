@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import json
 from typing import Any
 
 from .config import Config
@@ -167,6 +168,8 @@ def run_cli(args: Any, config: Config) -> int:
         return _not_supported("mem-clear (архивация)")
     if cmd == "diagnostics":
         return _cmd_diagnostics(orch)
+    if cmd == "models":
+        return _cmd_models(orch, args, config)
     if cmd == "skills":
         return _cmd_skills(orch, args)
     if cmd == "mcp":
@@ -567,6 +570,47 @@ def _cmd_mcp(orch: Orchestrator, args: Any) -> int:
         return 0
 
     print(f"Неизвестное действие: {action}. Используйте status, list.")
+    return 1
+
+
+def _cmd_models(orch: Orchestrator, args: Any, config: Config) -> int:
+    from adaptive_ai.models.model_selector import get_model_info_summary, select_best_model
+
+    action = args.action or "list"
+
+    if action == "list":
+        summary = get_model_info_summary(config.models_dir)
+        print("=== Модели ===")
+        print(f"ОЗУ всего: {summary['total_ram_gb']} GB")
+        print(f"ОЗУ доступно: {summary['available_ram_gb']} GB")
+        print(f"Бюджет (80%): {summary['budget_gb']} GB")
+        print(f"Найдено моделей: {summary['models_found']}")
+        print(f"Помещаются в бюджет: {summary['models_fitting']}")
+        print()
+        for m in summary["models"]:
+            fits = "✅" if m["fits"] else "❌"
+            print(f"  {fits} {m['name']}")
+            print(f"      Размер: {m['size_params']}B | Квантование: {m['quantization']} | Файл: {m['file_size_gb']} GB | RAM: {m['estimated_ram_gb']} GB")
+        return 0
+
+    if action == "select":
+        best = select_best_model(config.models_dir, ram_budget_ratio=0.8)
+        if best is None:
+            print("Модели не найдены в", config.models_dir)
+            return 1
+        print(f"Выбрана модель: {best.name}")
+        print(f"  Путь: {best.path}")
+        print(f"  Размер: {best.size_params}B | Квантование: {best.quantization}")
+        print(f"  Файл: {best.file_size_bytes / 1024**3:.2f} GB | RAM: {best.estimated_ram_bytes / 1024**3:.2f} GB")
+        print(f"\nДля использования: set ADAPTIVE_AI_MODEL_PATH={best.path}")
+        return 0
+
+    if action == "info":
+        summary = get_model_info_summary(config.models_dir)
+        print(json.dumps(summary, ensure_ascii=False, indent=2) if False else str(summary))
+        return 0
+
+    print(f"Неизвестное действие: {action}. Используйте list, select, info.")
     return 1
 
 
