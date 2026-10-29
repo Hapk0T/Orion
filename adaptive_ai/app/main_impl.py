@@ -8,7 +8,12 @@ from typing import Any
 from .config import Config
 
 try:  # зависимости ядра импортируются лениво, чтобы CLI запускался даже без модели
-    from adaptive_ai.core.contracts import Status
+    from adaptive_ai.core.contracts import (
+        ModelBackend,
+        ModelCapabilities,
+        Status,
+        TaskResult,
+    )
     from adaptive_ai.core.orchestrator import Orchestrator
     from adaptive_ai.memory.sqlite_store import SqliteMemoryStore
     from adaptive_ai.models.model_registry import load_backend
@@ -18,7 +23,57 @@ except Exception:  # pragma: no cover — при отсутствии завис
     SqliteMemoryStore = None  # type: ignore[assignment]
     load_backend = None  # type: ignore[assignment]
     ToolRegistry = None  # type: ignore[assignment]
+    ModelBackend = None  # type: ignore[assignment]
+    ModelCapabilities = None  # type: ignore[assignment]
     Status = None  # type: ignore[assignment]
+    TaskResult = None  # type: ignore[assignment]
+
+
+class _FallbackBackend:
+    """Заглушка модели для работы CLI без реальной модели.
+
+    Возвращает простой эхо-ответ с пометкой [режим без модели].
+    Используется на Этапе 2, пока пользователь не положит модель в ./models.
+    """
+
+    name = "fallback"
+
+    def load(self, model_path: str | None = None) -> TaskResult:
+        self._loaded = True
+        return TaskResult(status=Status.OK, data={"mode": "fallback"})
+
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        context: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+    ) -> TaskResult:
+        # Простой эхо-ответ без реальной инференсной модели
+        answer = f"[режим без модели] Получил ваше сообщение: {prompt[:200]}"
+        if system_prompt:
+            answer += f"\nСистемная инструкция: {system_prompt[:100]}"
+        if context:
+            answer += f"\nКонтекст из памяти: {context[:200]}"
+        return TaskResult(status=Status.OK, data=answer)
+
+    def capabilities(self) -> ModelCapabilities:
+        return ModelCapabilities(
+            name=self.name,
+            supports_state=False,
+            supports_streaming=False,
+            supports_structured_output=False,
+            supports_adapters=False,
+            supports_training=False,
+            supports_state_save=False,
+            supports_state_restore=False,
+            context_window=4096,
+        )
+
+    def is_loaded(self) -> bool:
+        return getattr(self, "_loaded", False)
 
 
 def _not_supported(feature: str) -> int:
@@ -34,6 +89,10 @@ def run_cli(args: Any, config: Config) -> int:
     # Инициализация компонентов
     try:
         backend = load_backend(config.model_backend, config.model_path)
+        if not backend.is_loaded():
+            # Модель не загружена (нет файла) — используем fallback для работоспособности CLI
+            backend = _FallbackBackend()
+            backend.load(None)
         memory = SqliteMemoryStore(config.db_path)
         registry = ToolRegistry()
         from adaptive_ai.core.policies import SafetyPolicy, ResourcePolicy
@@ -92,10 +151,10 @@ def _cmd_chat(orch: Orchestrator, args: Any, config: Config) -> int:
                 break
             if not message.strip():
                 continue
-            result = orch.solve(message)
+            result = orch.model.generate(prompt=message, max_tokens=512, temperature=0.7)
             print(f"Ответ: {result.data or result.error or 'без ответа'}")
         return 0
-    result = orch.solve(message)
+    result = orch.model.generate(prompt=message, max_tokens=512, temperature=0.7)
     print(f"Ответ: {result.data or result.error or 'без ответа'}")
     return 0
 
@@ -115,6 +174,8 @@ def _cmd_status(orch: Orchestrator, config: Config) -> int:
     print(f"Модель: {caps.name} v{caps.version}")
     print(f"Бэкенд: {orch.model.name}")
     print(f"Загружена: {orch.model.is_loaded()}")
+    if not orch.model.is_loaded():
+        print("Режим: fallback (без модели — положите модель в ./models)")
     print(f"Поддерживает состояние: {caps.supports_state}")
     print(f"Потоковая генерация: {caps.supports_streaming}")
     print(f"Структурированный вывод: {caps.supports_structured_output}")
