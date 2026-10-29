@@ -68,4 +68,8 @@ logs/
 # rwkv.cpp build artifacts
 rwkv.cpp/
 rwkv_build/
+
+# Test scripts (temporary)
+test_*.py
+test_*.bat
 build_rwkv.bat
