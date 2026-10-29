@@ -16,6 +16,8 @@ from .contracts import (
     TaskStatus,
     ToolRegistry,
 )
+from .error_monitor import ErrorMonitor
+from .guard_engine import GuardEngine
 from .policies import ResourcePolicy, SafetyPolicy, TaskOutcome
 
 
@@ -52,12 +54,16 @@ class Orchestrator:
         tools: ToolRegistry,
         safety: SafetyPolicy | None = None,
         resources: ResourcePolicy | None = None,
+        error_monitor: ErrorMonitor | None = None,
+        guard_engine: GuardEngine | None = None,
     ) -> None:
         self.model = model
         self.memory = memory
         self.tools = tools
         self.safety = safety or SafetyPolicy()
         self.resources = resources or ResourcePolicy()
+        self.error_monitor = error_monitor or ErrorMonitor()
+        self.guard_engine = guard_engine or GuardEngine()
         self._tasks: dict[str, Task] = {}
         self._current: Task | None = None
 
@@ -120,14 +126,44 @@ class Orchestrator:
                     task.status = TaskStatus.FAILED
                     return TaskResult(status=Status.ERROR, error=task.outcome.message, task_id=task.id)
 
-                # 6. При необходимости вызвать инструмент
+                # 6. Определяем инструмент
                 tool_name = action.get("tool")
+
+                # 5b. Проверка guards перед действием
+                guard_context = {
+                    "tool": tool_name,
+                    "arguments": action.get("arguments", {}),
+                    "task": task.request,
+                    "step": step_count,
+                }
+                guard_hits = self.guard_engine.check_before_action(guard_context)
+                if guard_hits:
+                    # Guard сработал — записываем в контекст и продолжаем с предупреждением
+                    for hit in guard_hits:
+                        context += f"\nGuard '{hit['guard_id']}' сработал: {hit['reason']}. Требуется: {hit['required_check']}"
+                    # Если guard критический (cost > 0), останавливаем
+                    critical = [h for h in guard_hits if h.get("cost", 0) > 0]
+                    if critical:
+                        task.outcome = TaskOutcome(
+                            kind="constraint",
+                            message=f"Guard заблокировал действие: {critical[0]['reason']}",
+                            details={"guards": critical},
+                        )
+                        task.status = TaskStatus.FAILED
+                        return TaskResult(status=Status.CONSTRAINT_VIOLATED, error=task.outcome.message, task_id=task.id)
+
+                # 7. При необходимости вызвать инструмент
                 if tool_name:
                     tool_result = self._execute_tool(task, tool_name, action.get("arguments", {}))
                     task.used_tools.append(
                         {"tool": tool_name, "arguments": action.get("arguments", {}), "result": tool_result.__dict__}
                     )
                     if tool_result.status == Status.ERROR:
+                        # Регистрируем ошибку в ErrorMonitor
+                        self.error_monitor.check_external(
+                            [{"tool": tool_name, "status": "error", "error": tool_result.error}],
+                            [],
+                        )
                         # 9. При ошибке скорректировать инструкцию или план (до лимита повторов)
                         retry_count = action.get("_retries", 0)
                         if retry_count < self.resources.max_retries_per_action:
@@ -220,12 +256,53 @@ class Orchestrator:
         return self.tools.call(name, arguments)
 
     def _record_task(self, task: Task) -> None:
-        """Записать итог задачи в историю (память)."""
+        """Записать итог задачи в историю (память) и журнал опыта."""
         try:
             self.memory.save_episode(
                 content=f"Задача: {task.request}\nРезультат: {task.result or task.error or ''}",
                 source=f"orchestrator:{task.id}",
                 tags=["task", task.status.value],
             )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Запись в журнал опыта (если доступен)
+        try:
+            from adaptive_ai.memory.experience_journal import ExperienceJournal
+
+            journal = ExperienceJournal(self.memory.db_path if hasattr(self.memory, "db_path") else None)
+            journal.append(
+                event_type="task_completed",
+                payload={
+                    "task_id": task.id,
+                    "request": task.request,
+                    "status": task.status.value,
+                    "result": task.result,
+                    "error": task.error,
+                    "used_tools": task.used_tools,
+                    "retrieved_memory": task.retrieved_memory,
+                },
+                source_id=f"orchestrator:{task.id}",
+            )
+            journal.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Проверка ошибок после завершения
+        try:
+            errors = self.error_monitor.check_internal(
+                claims=[task.result or ""],
+                conditions=[task.request],
+                result=task.result,
+            )
+            # Если обнаружена повторяющаяся ошибка — создаём guard
+            for err in errors:
+                if err.status == "recurring_pattern":
+                    self.guard_engine.create_from_error(
+                        error_case=err,
+                        pattern=err.description[:100],
+                        action_type="block",
+                        applicability=[err.error_type.value],
+                    )
         except Exception:  # noqa: BLE001
             pass

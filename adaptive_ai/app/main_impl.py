@@ -98,6 +98,8 @@ def run_cli(args: Any, config: Config) -> int:
             backend.load(None)
         memory = SqliteMemoryStore(config.db_path)
         registry = ToolRegistry()
+        from adaptive_ai.core.error_monitor import ErrorMonitor
+        from adaptive_ai.core.guard_engine import GuardEngine
         from adaptive_ai.core.policies import SafetyPolicy, ResourcePolicy
 
         orch = Orchestrator(
@@ -111,6 +113,8 @@ def run_cli(args: Any, config: Config) -> int:
                 max_context_tokens=config.max_context_tokens,
                 max_ram_mb=config.max_ram_mb,
             ),
+            error_monitor=ErrorMonitor(),
+            guard_engine=GuardEngine(),
         )
     except Exception as exc:  # noqa: BLE001
         print(f"Ошибка инициализации: {exc}")
