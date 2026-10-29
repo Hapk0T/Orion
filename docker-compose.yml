@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  adaptive-ai:
+    build: .
+    container_name: adaptive-ai
+    # Инференс на CPU — GPU не требуется. CUDA отключён по умолчанию.
+    environment:
+      - ADAPTIVE_AI_DATA_DIR=/data
+      - ADAPTIVE_AI_MODELS_DIR=/models
+      - ADAPTIVE_AI_DB_PATH=/data/adaptive_ai.db
+      - ADAPTIVE_AI_MODEL_BACKEND=rwkv_cpp
+      - ADAPTIVE_AI_MODEL_PATH=/models/rwkv-model.bin
+      - ADAPTIVE_AI_MAX_STEPS=8
+      - ADAPTIVE_AI_MAX_RETRIES=2
+    volumes:
+      # Пользовательские данные и база памяти — persistent volumes
+      - ./data:/data
+      # Модели класть сюда (не в Git, не в образ)
+      - ./models:/models
+    # Нет автоматического доступа к сети для загрузки моделей.
+    # Сетевые функции — опциональные, включаются явно.
+    network_mode: "none"
+    stdin_open: true
+    tty: true

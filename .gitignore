@@ -1,0 +1,70 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+*.dll
+*.dylib
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Data and models (user data, never in Git)
+data/
+models/
+*.db
+*.db-journal
+*.bin
+*.pth
+*.gguf
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+
+# Backups
+*.bak
+*.backup
+
+# rwkv.cpp build artifacts
+rwkv.cpp/
+rwkv_build/

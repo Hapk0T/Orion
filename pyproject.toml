@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adaptive-ai"
+version = "0.1.0"
+description = "Локальная саморазвивающаяся интеллектуальная система (Adaptive Intelligence)"
+requires-python = ">=3.12"
+readme = "README.md"
+authors = [{ name = "Adaptive Intelligence Project" }]
+license = { text = "MIT" }
+
+[project.dependencies]
+# Минимальный набор зависимостей. Тяжёлые библиотеки подключаются опционально.
+numpy = ">=1.24"
+
+[project.optional-dependencies]
+# RWKV через rwkv.cpp (C++ бэкенд, собирается отдельно, без AVX2)
+rwkv-cpp = []
+
+# RWKV через чистый Python + PyTorch (fallback, работает на любом CPU, медленнее)
+rwkv-pytorch = ["rwkv>=0.7"]
+
+# Тестирование
+test = ["pytest>=8.0", "pytest-cov>=4.0"]
+
+# CLI
+cli = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "unit: юнит-тесты",
+    "integration: интеграционные тесты",
+    "e2e: сквозные тесты",
+    "slow: долгие тесты",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["adaptive_ai*"]

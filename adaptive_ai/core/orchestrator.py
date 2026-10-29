@@ -1,0 +1,231 @@
+"""Оркестратор — управляет циклом планирования, исполнения и проверки задач."""
+
+from __future__ import annotations
+
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+from .contracts import (
+    MemoryStore,
+    ModelBackend,
+    Status,
+    TaskResult,
+    TaskStatus,
+    ToolRegistry,
+)
+from .policies import ResourcePolicy, SafetyPolicy, TaskOutcome
+
+
+@dataclass
+class Task:
+    """Задача и её выполнение."""
+
+    id: str
+    request: str
+    status: TaskStatus = TaskStatus.PENDING
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    plan: list[dict[str, Any]] = field(default_factory=list)
+    steps: list[dict[str, Any]] = field(default_factory=list)
+    outcome: TaskOutcome | None = None
+    result: str | None = None
+    error: str | None = None
+    retrieved_memory: list[dict[str, Any]] = field(default_factory=list)
+    used_tools: list[dict[str, Any]] = field(default_factory=list)
+    model_used: str | None = None
+    config_version: str | None = None
+
+
+class Orchestrator:
+    """Оркестратор цикла решения задач.
+
+    Не зависит от конкретной реализации SQLite, LLM или MCP — только от интерфейсов.
+    """
+
+    def __init__(
+        self,
+        model: ModelBackend,
+        memory: MemoryStore,
+        tools: ToolRegistry,
+        safety: SafetyPolicy | None = None,
+        resources: ResourcePolicy | None = None,
+    ) -> None:
+        self.model = model
+        self.memory = memory
+        self.tools = tools
+        self.safety = safety or SafetyPolicy()
+        self.resources = resources or ResourcePolicy()
+        self._tasks: dict[str, Task] = {}
+        self._current: Task | None = None
+
+    # ------------------------------------------------------------------ #
+    # Задачи
+    # ------------------------------------------------------------------ #
+    def create_task(self, request: str) -> Task:
+        task_id = str(uuid.uuid4())
+        task = Task(id=task_id, request=request)
+        self._tasks[task_id] = task
+        self._current = task
+        return task
+
+    def get_task(self, task_id: str) -> Task | None:
+        return self._tasks.get(task_id)
+
+    def list_tasks(self) -> list[Task]:
+        return list(self._tasks.values())
+
+    # ------------------------------------------------------------------ #
+    # Основной цикл
+    # ------------------------------------------------------------------ #
+    def solve(self, request: str) -> TaskResult:
+        """Выполнить полный цикл решения задачи."""
+        task = self.create_task(request)
+        start = time.monotonic()
+
+        try:
+            # 1. Принять запрос — уже создано
+            task.status = TaskStatus.IN_PROGRESS
+            task.updated_at = datetime.now(timezone.utc)
+
+            # 2. Определить тип задачи и ограничения (заглушка — расширяется навыками)
+            task.plan = [{"step": 1, "action": "analyze", "description": "Анализ запроса"}]
+
+            # 3. Извлечь релевантную память
+            memories = self._retrieve_memory(request, task)
+            task.retrieved_memory = [m.__dict__ if hasattr(m, "__dict__") else m for m in memories]
+
+            # 4. Сформировать ограниченный контекст
+            context = self._build_context(task, memories)
+
+            # 5. Получить план или следующее действие модели
+            step_count = 0
+            while step_count < self.resources.max_steps:
+                step_count += 1
+                elapsed = time.monotonic() - start
+                budget = self.resources.remaining_budget(step_count, elapsed)
+                if budget["budget_exhausted"]:
+                    task.outcome = TaskOutcome(
+                        kind="budget", message="Исчерпан бюджет шагов или времени", details=budget
+                    )
+                    task.status = TaskStatus.FAILED
+                    return TaskResult(status=Status.BUDGET_EXHAUSTED, error=task.outcome.message, task_id=task.id)
+
+                # 5a. Спросить модель, какое действие выполнить
+                action = self._ask_model_for_action(task, context)
+                if action is None:
+                    task.outcome = TaskOutcome(kind="model_error", message="Модель не вернула действие")
+                    task.status = TaskStatus.FAILED
+                    return TaskResult(status=Status.ERROR, error=task.outcome.message, task_id=task.id)
+
+                # 6. При необходимости вызвать инструмент
+                tool_name = action.get("tool")
+                if tool_name:
+                    tool_result = self._execute_tool(task, tool_name, action.get("arguments", {}))
+                    task.used_tools.append(
+                        {"tool": tool_name, "arguments": action.get("arguments", {}), "result": tool_result.__dict__}
+                    )
+                    if tool_result.status == Status.ERROR:
+                        # 9. При ошибке скорректировать инструкцию или план (до лимита повторов)
+                        retry_count = action.get("_retries", 0)
+                        if retry_count < self.resources.max_retries_per_action:
+                            action["_retries"] = retry_count + 1
+                            context += f"\nОшибка инструмента: {tool_result.error}. Повторите с исправлением."
+                            continue
+                        task.outcome = TaskOutcome(kind="tool_error", message=tool_result.error or "Ошибка инструмента")
+                        task.status = TaskStatus.FAILED
+                        return TaskResult(status=Status.ERROR, error=task.outcome.message, task_id=task.id)
+
+                    # 7. Получить и проверить результат
+                    context += f"\nРезультат инструмента {tool_name}: {tool_result.data}"
+
+                # 8. Решить, завершить или продолжить
+                if action.get("finish"):
+                    task.result = action.get("answer", "")
+                    task.outcome = TaskOutcome(kind="completed", message="Задача завершена успешно")
+                    task.status = TaskStatus.COMPLETED
+                    self._record_task(task)
+                    return TaskResult(status=Status.OK, data=task.result, task_id=task.id)
+
+            # Цикл исчерпан без завершения
+            task.outcome = TaskOutcome(kind="budget", message="Достигнут лимит шагов без завершения")
+            task.status = TaskStatus.FAILED
+            self._record_task(task)
+            return TaskResult(status=Status.BUDGET_EXHAUSTED, error=task.outcome.message, task_id=task.id)
+
+        except Exception as exc:  # noqa: BLE001 — верхний уровень, логируем и возвращаем
+            task.status = TaskStatus.FAILED
+            task.error = str(exc)
+            return TaskResult(status=Status.ERROR, error=str(exc), task_id=task.id)
+
+    # ------------------------------------------------------------------ #
+    # Вспомогательные методы цикла
+    # ------------------------------------------------------------------ #
+    def _retrieve_memory(self, query: str, task: Task) -> list[Any]:
+        try:
+            return self.memory.search(query, limit=5) or []
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _build_context(self, task: Task, memories: list[Any]) -> str:
+        parts = [f"Задача: {task.request}"]
+        if memories:
+            parts.append("Релевантные воспоминания:")
+            for m in memories:
+                content = getattr(m, "content", str(m))
+                source = getattr(m, "source", None)
+                parts.append(f"- {content}" + (f" [источник: {source}]" if source else ""))
+        return "\n".join(parts)
+
+    def _ask_model_for_action(self, task: Task, context: str) -> dict[str, Any] | None:
+        """Попросить модель определить следующее действие. Возвращает dict или None."""
+        prompt = (
+            f"{context}\n\n"
+            "Определи следующее действие. Ответь в формате JSON:\n"
+            '{"tool": "имя_инструмента_или_null, "arguments": {...}, "finish": true/false, "answer": "текст ответа"}\n'
+            "Если инструменты не нужны, установи finish: true и answer."
+        )
+        caps = self.model.capabilities()
+        result = self.model.generate(
+            prompt=prompt,
+            system_prompt="Ты помощник, который планирует действия и использует инструменты.",
+            max_tokens=256,
+            temperature=0.3,
+        )
+        if result.status != Status.OK or not result.data:
+            return None
+        text = result.data if isinstance(result.data, str) else str(result.data)
+        # Пытаемся распарсить JSON; если не получается — считаем ответом
+        import json as _json
+
+        try:
+            start_idx = text.find("{")
+            end_idx = text.rfind("}")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                return _json.loads(text[start_idx : end_idx + 1])
+        except (_json.JSONDecodeError, ValueError):
+            pass
+        return {"tool": None, "arguments": {}, "finish": True, "answer": text.strip()}
+
+    def _execute_tool(self, task: Task, name: str, arguments: dict[str, Any]) -> TaskResult:
+        # Проверка безопасности
+        if name in ("file_delete", "system_change", "network_send", "unverified_command"):
+            if not self.safety.is_allowed(name):
+                return TaskResult(
+                    status=Status.CONSTRAINT_VIOLATED,
+                    error=f"Действие {name} запрещено политикой безопасности",
+                )
+        return self.tools.call(name, arguments)
+
+    def _record_task(self, task: Task) -> None:
+        """Записать итог задачи в историю (память)."""
+        try:
+            self.memory.save_episode(
+                content=f"Задача: {task.request}\nРезультат: {task.result or task.error or ''}",
+                source=f"orchestrator:{task.id}",
+                tags=["task", task.status.value],
+            )
+        except Exception:  # noqa: BLE001
+            pass
