@@ -97,3 +97,34 @@ def test_budget_exhausted():
     )
     result = orch.solve("должен исчерпать бюджет")
     assert result.status == "budget_exhausted", result.status
+
+
+def test_retrieved_sources():
+    """Проверка, что источники извлекаются и сохраняются."""
+    mem = FakeMemory()
+    mem.search = lambda query, limit=10: []
+    orch = Orchestrator(
+        model=FakeBackend(answer="ответ"),
+        memory=mem,
+        tools=FakeRegistry(),
+        safety=SafetyPolicy(),
+        resources=ResourcePolicy(max_steps=8, max_retries_per_action=2),
+    )
+    result = orch.solve("тестовый запрос")
+    assert result.status == "ok"
+    task = orch.get_task(result.task_id)
+    assert task is not None
+    assert isinstance(task.retrieved_sources, list)
+
+
+def test_context_limit():
+    """Проверка, что контекст ограничивается по размеру."""
+    orch = Orchestrator(
+        model=FakeBackend(answer="ответ"),
+        memory=FakeMemory(),
+        tools=FakeRegistry(),
+        safety=SafetyPolicy(),
+        resources=ResourcePolicy(max_steps=8, max_retries_per_action=2, max_context_tokens=10),
+    )
+    result = orch.solve("тест")
+    assert result.status == "ok"

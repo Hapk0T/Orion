@@ -36,6 +36,7 @@ class Task:
     result: str | None = None
     error: str | None = None
     retrieved_memory: list[dict[str, Any]] = field(default_factory=list)
+    retrieved_sources: list[dict[str, Any]] = field(default_factory=list)
     used_tools: list[dict[str, Any]] = field(default_factory=list)
     model_used: str | None = None
     config_version: str | None = None
@@ -99,12 +100,13 @@ class Orchestrator:
             # 2. Определить тип задачи и ограничения (заглушка — расширяется навыками)
             task.plan = [{"step": 1, "action": "analyze", "description": "Анализ запроса"}]
 
-            # 3. Извлечь релевантную память
-            memories = self._retrieve_memory(request, task)
+            # 3. Извлечь релевантную память с источниками
+            memories, sources = self._retrieve_with_sources(request, task)
             task.retrieved_memory = [m.__dict__ if hasattr(m, "__dict__") else m for m in memories]
+            task.retrieved_sources = sources
 
             # 4. Сформировать ограниченный контекст
-            context = self._build_context(task, memories)
+            context = self._build_context(task, memories, sources)
 
             # 5. Получить план или следующее действие модели
             step_count = 0
@@ -205,15 +207,40 @@ class Orchestrator:
         except Exception:  # noqa: BLE001
             return []
 
-    def _build_context(self, task: Task, memories: list[Any]) -> str:
+    def _retrieve_with_sources(self, query: str, task: Task) -> tuple[list[Any], list[dict[str, Any]]]:
+        """Извлечь воспоминания с сохранением источников."""
+        memories = self._retrieve_memory(query, task)
+        sources = []
+        for m in memories:
+            sources.append({
+                "id": getattr(m, "id", None),
+                "content": getattr(m, "content", str(m)),
+                "source": getattr(m, "source", None),
+                "fact_status": getattr(m, "fact_status", None),
+                "fact_status_value": getattr(m, "fact_status", None).value if hasattr(m, "fact_status") and m.fact_status else "unknown",
+            })
+        return memories, sources
+
+    def _build_context(self, task: Task, memories: list[Any], sources: list[dict[str, Any]] | None = None) -> str:
         parts = [f"Задача: {task.request}"]
         if memories:
             parts.append("Релевантные воспоминания:")
-            for m in memories:
+            for i, m in enumerate(memories):
                 content = getattr(m, "content", str(m))
                 source = getattr(m, "source", None)
-                parts.append(f"- {content}" + (f" [источник: {source}]" if source else ""))
-        return "\n".join(parts)
+                fact_status = getattr(m, "fact_status", None)
+                status_str = ""
+                if fact_status:
+                    status_val = fact_status.value if hasattr(fact_status, "value") else str(fact_status)
+                    status_str = f" [статус: {status_val}]"
+                src_str = f" [источник: {source}]" if source else ""
+                parts.append(f"- {content}{src_str}{status_str}")
+        # Ограничение размера контекста
+        context = "\n".join(parts)
+        max_chars = self.resources.max_context_tokens * 4
+        if len(context) > max_chars:
+            context = context[:max_chars] + "\n... (контекст обрезан)"
+        return context
 
     def _ask_model_for_action(self, task: Task, context: str) -> dict[str, Any] | None:
         """Попросить модель определить следующее действие. Возвращает dict или None."""
