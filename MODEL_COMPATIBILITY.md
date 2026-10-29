@@ -7,7 +7,7 @@
 | RWKV-4-Pile-169M | 169M | rwkv.cpp Q4_0 | ~1 GB | i7-3612QM (нет AVX2) | Не проверено (нет модели) |
 | RWKV-4-Pile-1.5B | 1.5B | rwkv.cpp Q4_0 | ~2 GB | i7-3612QM (нет AVX2) | Не проверено |
 | RWKV-7-World-0.1B | ~100M | rwkv.cpp Q4_0 | ~0.5 GB | i7-3612QM (нет AVX2) | Не проверено |
-| RWKV-7-World-0.4B | ~400M | rwkv.cpp Q4_0 | ~1 GB | i7-3612QM (нет AVX2) | Не проверено |
+| RWKV-7-World-0.4B | ~400M | rwkv.cpp Q4_0 | ~1 GB | i7-3612QM (нет AVX2) | ✅ Проверено — генерирует текст на русском языке |
 | RWKV-7-World-1.5B | ~1.5B | rwkv.cpp Q4_0 | ~2 GB | i7-3612QM (нет AVX2) | Не проверено |
 | RWKV7-G1k-13.3B | 13.3B | rwkv.cpp Q4_0 | ~6.7 GB | i7-3612QM (нет AVX2) | ❌ Не реалистично для целевого железа |
 
