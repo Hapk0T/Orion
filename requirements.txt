@@ -1,0 +1,27 @@
+# Adaptive Intelligence — зависимости
+# Установка: pip install -r requirements.txt
+
+# Обязательные
+numpy>=1.24
+
+# Тестирование
+pytest>=8.0
+pytest-cov>=4.0
+
+# RWKV через rwkv.cpp (C++ бэкенд, собирается отдельно, без AVX2)
+# Устанавливается через: pip install rwkv (включает tokenizers)
+rwkv>=0.8
+
+# Опциональные
+# torch — для конвертации моделей (только CPU)
+# torch>=2.0 --index-url https://download.pytorch.org/whl/cpu
+
+# MCP (этап 8)
+# mcp>=1.0
+
+# API сервер (уже в stdlib, но для production рекомендуется)
+# fastapi>=0.100
+# uvicorn>=0.20
+
+# Мониторинг ресурсов
+# psutil>=5.9

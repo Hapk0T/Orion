@@ -70,27 +70,54 @@ def launch_open_webui():
     """Запуск Open WebUI."""
     print("=== Open WebUI ===")
     print()
-    print("Open WebUI — веб-интерфейс для LLM. Требует Docker.")
-    print()
-    print("Шаги:")
-    print("  1. Убедитесь, что Docker Desktop установлен и запущен")
-    print("  2. Запустите API-сервер Adaptive Intelligence")
-    print("  3. Запустите Open WebUI через Docker")
+    print("Open WebUI — веб-интерфейс для LLM.")
     print()
 
     # Проверяем Docker
+    docker_available = False
     try:
         result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
         if result.returncode == 0:
+            docker_available = True
             print(f"  Docker: {result.stdout.strip()}")
-        else:
-            print("  Docker не найден. Установите Docker Desktop.")
-            print("  https://www.docker.com/products/docker-desktop/")
-            return
     except FileNotFoundError:
-        print("  Docker не найден. Установите Docker Desktop.")
-        print("  https://www.docker.com/products/docker-desktop/")
-        return
+        pass
+
+    if not docker_available:
+        print("  Docker не найден.")
+        print()
+        print("  Варианты:")
+        print("  1. Установить Docker Desktop: https://www.docker.com/products/docker-desktop/")
+        print("  2. Использовать Cherry Studio (вариант 3) — не требует Docker")
+        print("  3. Использовать pip-версию Open WebUI (экспериментально)")
+        print()
+        choice = input("  Выберите вариант (1/2/3): ").strip()
+        if choice == "1":
+            print("  Установите Docker Desktop и перезапустите лаунчер.")
+            return
+        elif choice == "2":
+            launch_cherry_studio()
+            return
+        elif choice == "3":
+            print("  Установка Open WebUI через pip...")
+            subprocess.run([PYTHON, "-m", "pip", "install", "open-webui"], cwd=PROJECT_DIR)
+            print("  Запуск Open WebUI...")
+            api_process = subprocess.Popen(
+                [PYTHON, "-m", "adaptive_ai.app.api_server", "--port", "8080"],
+                cwd=PROJECT_DIR,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(5)
+            try:
+                subprocess.run([PYTHON, "-m", "open_webui", "serve", "--port", "3000"], cwd=PROJECT_DIR)
+            except KeyboardInterrupt:
+                pass
+            finally:
+                api_process.terminate()
+            return
+        else:
+            return
 
     # Запускаем API-сервер в фоне
     print("\nЗапуск API-сервера...")
