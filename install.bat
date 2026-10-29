@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM ============================================================
 REM Adaptive Intelligence — Полный установщик для Windows
 REM Работает на чистой Windows без предустановленных инструментов
@@ -204,6 +205,7 @@ if exist "config.txt" (
 
 REM Создаём run.bat для удобного запуска
 echo @echo off > run.bat
+echo chcp 65001 ^>nul >> run.bat
 echo cd /d "%PROJECT_DIR%" >> run.bat
 echo set PATH=C:\Users\%USERNAME%\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261020-ucrt-x86_64\bin;C:\Program Files\CMake\bin;C:\Program Files\Git\bin;%%PATH%% >> run.bat
 echo python launcher.py >> run.bat
@@ -257,6 +259,7 @@ goto :skip_components
 
 REM Создаём run.bat для удобного запуска
 echo @echo off > run.bat
+echo chcp 65001 ^>nul >> run.bat
 echo cd /d "%PROJECT_DIR%" >> run.bat
 echo set PATH=C:\Users\%USERNAME%\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261020-ucrt-x86_64\bin;C:\Program Files\CMake\bin;C:\Program Files\Git\bin;%%PATH%% >> run.bat
 echo python launcher.py >> run.bat
