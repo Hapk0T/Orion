@@ -33,6 +33,8 @@ class Task:
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     plan: list[dict[str, Any]] = field(default_factory=list)
     steps: list[dict[str, Any]] = field(default_factory=list)
+    thinking: str = ""
+    thinking_stages: list[str] = field(default_factory=list)
     outcome: TaskOutcome | None = None
     result: str | None = None
     error: str | None = None
@@ -324,6 +326,10 @@ class Orchestrator:
 
         # Парсим через StructuredResponse
         structured = StructuredResponse.parse(text)
+        # Сохраняем размышления в задачу
+        if structured.thinking:
+            task.thinking = structured.thinking.content
+            task.thinking_stages = structured.thinking_stages
         if structured.tool_calls:
             tc = structured.tool_calls[0]
             return {
@@ -331,9 +337,16 @@ class Orchestrator:
                 "arguments": tc.arguments,
                 "finish": False,
                 "answer": structured.answer,
+                "thinking": structured.thinking.content if structured.thinking else "",
             }
         if structured.answer:
-            return {"tool": None, "arguments": {}, "finish": True, "answer": structured.answer}
+            return {
+                "tool": None,
+                "arguments": {},
+                "finish": True,
+                "answer": structured.answer,
+                "thinking": structured.thinking.content if structured.thinking else "",
+            }
 
         # Fallback: пытаемся распарсить JSON
         import json as _json

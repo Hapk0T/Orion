@@ -209,6 +209,59 @@ echo set PATH=C:\Users\%USERNAME%\AppData\Local\Microsoft\WinGet\Packages\Martin
 echo python launcher.py >> run.bat
 
 echo.
+REM ============================================================
+REM 9. Дополнительные компоненты (по выбору)
+REM ============================================================
+echo.
+echo [9/9] Дополнительные компоненты...
+echo.
+echo Выберите дополнительные компоненты для установки:
+echo   1. Только базовая система (CLI + модель)
+echo   2. + Docker Desktop (для Open WebUI)
+echo   3. + Cherry Studio (десктоп-приложение)
+echo   4. Полная установка (Docker + Cherry Studio)
+echo.
+set /p COMPONENTS="Ваш выбор (1-4): "
+
+if "%COMPONENTS%"=="2" goto :install_docker
+if "%COMPONENTS%"=="3" goto :install_cherry
+if "%COMPONENTS%"=="4" goto :install_all
+goto :skip_components
+
+:install_docker
+echo Установка Docker Desktop...
+winget install Docker.DockerDesktop --accept-package-agreements --accept-source-agreements
+if %errorlevel% neq 0 (
+    echo ПРЕДУПРЕЖДЕНИЕ: Не удалось установить Docker Desktop.
+    echo Скачайте вручную: https://www.docker.com/products/docker-desktop/
+)
+goto :skip_components
+
+:install_cherry
+echo Установка Cherry Studio...
+winget install CherryStudio.CherryStudio --accept-package-agreements --accept-source-agreements
+if %errorlevel% neq 0 (
+    echo ПРЕДУПРЕЖДЕНИЕ: Не удалось установить Cherry Studio.
+    echo Скачайте вручную: https://cherry-ai.com/
+)
+goto :skip_components
+
+:install_all
+echo Установка Docker Desktop...
+winget install Docker.DockerDesktop --accept-package-agreements --accept-source-agreements
+echo Установка Cherry Studio...
+winget install CherryStudio.CherryStudio --accept-package-agreements --accept-source-agreements
+goto :skip_components
+
+:skip_components
+
+REM Создаём run.bat для удобного запуска
+echo @echo off > run.bat
+echo cd /d "%PROJECT_DIR%" >> run.bat
+echo set PATH=C:\Users\%USERNAME%\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20261020-ucrt-x86_64\bin;C:\Program Files\CMake\bin;C:\Program Files\Git\bin;%%PATH%% >> run.bat
+echo python launcher.py >> run.bat
+
+echo.
 echo ============================================================
 echo   Установка завершена!
 echo ============================================================
