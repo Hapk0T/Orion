@@ -55,6 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("diagnostics", help="Запуск диагностических тестов")
 
+    eval_parser = sub.add_parser("eval", help="Запуск оценки качества")
+    eval_parser.add_argument("suite", nargs="?", default="all", help="Название набора (all, russian_language, fact_extraction, memory, logic, tool_execution, error_handling, structured_output)")
+    eval_parser.add_argument("--save", action="store_true", help="Сохранить результаты в файл")
+
     tools_parser = sub.add_parser("tools", help="Просмотр и тестирование инструментов")
     tools_parser.add_argument("action", nargs="?", default="list", help="list или test <tool_name>")
     tools_parser.add_argument("tool_name", nargs="?", help="Имя инструмента для теста")

@@ -159,6 +159,8 @@ def run_cli(args: Any, config: Config) -> int:
         return _not_supported("mem-clear (архивация)")
     if cmd == "diagnostics":
         return _cmd_diagnostics(orch)
+    if cmd == "eval":
+        return _cmd_eval(orch, args, config)
     if cmd == "tools":
         return _cmd_tools(orch, args)
     if cmd == "training-status":
@@ -340,6 +342,71 @@ def _cmd_tools(orch: Orchestrator, args: Any) -> int:
         return 0
     print(f"Неизвестное действие: {action}. Используйте 'list' или 'test'.")
     return 1
+
+
+def _cmd_eval(orch: Orchestrator, args: Any, config: Config) -> int:
+    from adaptive_ai.evaluation.datasets.suites import all_suites
+    from adaptive_ai.evaluation.evaluators import Evaluator
+
+    suites = all_suites()
+    suite_name = args.suite or "all"
+
+    if suite_name == "all":
+        selected = []
+        for s in suites.values():
+            selected.extend(s)
+    elif suite_name in suites:
+        selected = suites[suite_name]
+    else:
+        print(f"Неизвестный набор: {suite_name}. Доступные: all, {', '.join(suites.keys())}")
+        return 1
+
+    print(f"=== Оценка качества: {suite_name} ({len(selected)} тестов) ===")
+
+    evaluator = Evaluator(results_dir=str(config.data_dir / "eval_results"))
+
+    def run_fn(inp):
+        # Для инструментов — вызываем напрямую
+        if isinstance(inp, str) and inp.startswith("calculator:"):
+            expr = inp.split(":", 1)[1].strip()
+            res = orch.tools.call("calculator", {"expression": expr})
+            return res.data.get("result") if res.status == "ok" else None
+        if isinstance(inp, str) and inp.startswith("python_calc:"):
+            code = inp.split(":", 1)[1].strip()
+            res = orch.tools.call("python_calc", {"code": code})
+            return res.data.get("result") if res.status == "ok" else None
+        # Для остальных — генерация модели
+        result = orch.model.generate(prompt=str(inp), max_tokens=128, temperature=0.3)
+        return result.data if result.status == "ok" else None
+
+    results = evaluator.run(selected, run_fn)
+
+    # Вывод результатов
+    passed = sum(1 for r in results if r.status == "passed")
+    failed = sum(1 for r in results if r.status == "failed")
+    errors = sum(1 for r in results if r.status == "error")
+    print(f"\nИтог: {passed} passed, {failed} failed, {errors} errors из {len(results)}")
+
+    for r in results:
+        status_icon = "✅" if r.status == "passed" else "❌" if r.status == "failed" else "⚠️"
+        print(f"  {status_icon} [{r.test_id}] {r.category}: {r.status} — {r.message[:80]}")
+
+    # Сохранение результатов
+    if args.save:
+        path = evaluator.save(f"eval_{suite_name}")
+        print(f"\nРезультаты сохранены: {path}")
+
+    # Сохранение в память (для регрессионного анализа)
+    try:
+        orch.memory.save_episode(
+            content=f"Оценка: {suite_name}. Passed: {passed}, Failed: {failed}, Errors: {errors}",
+            source="evaluation",
+            tags=["eval", suite_name, f"passed={passed}", f"failed={failed}"],
+        )
+    except Exception:
+        pass
+
+    return 0
 
 
 def _cmd_diagnostics(orch: Orchestrator) -> int:
