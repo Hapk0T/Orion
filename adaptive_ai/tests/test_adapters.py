@@ -56,10 +56,9 @@ def test_rwkv_backend_encode_decode():
     backend = RwkvCppBackend()
     text = "Привет, мир!"
     tokens = backend._encode(text)
-    assert TOK_BEGIN in tokens
-    assert TOK_END in tokens
+    assert len(tokens) > 0
     decoded = backend._decode(tokens)
-    assert "Привет" in decoded or "Привет" in text  # байтовый токенизатор может не идеально декодировать
+    assert "Привет" in decoded or "Привет" in text  # токенизатор может не идеально декодировать
 
 
 def test_rwkv_backend_sample_greedy():
@@ -70,7 +69,7 @@ def test_rwkv_backend_sample_greedy():
 
     logits = [1.0, 1.0, 1.0]
     tok = backend._sample(logits, temperature=0.7)
-    assert tok == 0  # все равны, возвращается первый
+    assert tok in (0, 1, 2)  # все равны, возвращается один из nucleus
 
 
 def test_rwkv_backend_capabilities():

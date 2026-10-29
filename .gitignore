@@ -45,8 +45,8 @@ Thumbs.db
 .dockerignore
 
 # Data and models (user data, never in Git)
-data/
-models/
+/data/
+/models/
 *.db
 *.db-journal
 *.bin

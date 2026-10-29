@@ -17,6 +17,7 @@ try:  # зависимости ядра импортируются лениво,
     from adaptive_ai.core.orchestrator import Orchestrator
     from adaptive_ai.memory.sqlite_store import SqliteMemoryStore
     from adaptive_ai.models.model_registry import load_backend
+    import adaptive_ai.models.rwkv_backend  # noqa: F401 — регистрация бэкенда
     from adaptive_ai.tools.registry import ToolRegistry
 except Exception:  # pragma: no cover — при отсутствии зависимостей CLI покажет not_supported
     Orchestrator = None  # type: ignore[assignment]
@@ -90,7 +91,9 @@ def run_cli(args: Any, config: Config) -> int:
     try:
         backend = load_backend(config.model_backend, config.model_path)
         if not backend.is_loaded():
-            # Модель не загружена (нет файла) — используем fallback для работоспособности CLI
+            # Модель не загружена — покажем ошибку и переключимся на fallback
+            print(f"Предупреждение: модель не загружена ({config.model_path}).")
+            print("Используется режим fallback (без реальной инференсной модели).")
             backend = _FallbackBackend()
             backend.load(None)
         memory = SqliteMemoryStore(config.db_path)

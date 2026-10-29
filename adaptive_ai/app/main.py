@@ -6,6 +6,11 @@ import argparse
 import sys
 from typing import NoReturn
 
+# Устанавливаем UTF-8 для вывода в консоль Windows (избегаем ошибок charmap)
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from .config import Config
 from .main_impl import run_cli
 
