@@ -368,6 +368,100 @@ class RwkvCppBackend(BaseBackend):
 
         return TaskResult(status=Status.OK, data=text.strip())
 
+    def generate_stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        context: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        top_p: float = 0.85,
+        top_k: int = 40,
+        repetition_penalty: float = 1.1,
+    ):
+        """Потоковая генерация: yield строк (токенов) по мере генерации."""
+        if not self._loaded or self._ctx is None or self._lib_wrapper is None:
+            yield TaskResult(status=Status.ERROR, error="Модель не загружена")
+            return
+
+        lib = self._lib_wrapper.lib
+
+        from adaptive_ai.core.formats import PromptTemplate
+        template = PromptTemplate(
+            system_prompt=system_prompt or "",
+            context=context or "",
+            user_message=prompt,
+        )
+        full_prompt = template.render_chat()
+
+        try:
+            tokens = self._encode(full_prompt)
+        except Exception as exc:  # noqa: BLE001
+            yield TaskResult(status=Status.ERROR, error=f"Ошибка токенизации: {exc}")
+            return
+
+        arr = (c_uint32 * len(tokens))(*tokens)
+        ok = lib.rwkv_eval_sequence_in_chunks(
+            self._ctx,
+            arr,
+            len(tokens),
+            16,
+            self._state,
+            self._state,
+            self._logits_buf,
+        )
+        if not ok:
+            yield TaskResult(status=Status.ERROR, error="Ошибка оценки модели (eval_sequence)")
+            return
+
+        generated_tokens: list[int] = []
+        stop_sequences = ["\n\nUser:", "\n\nAssistant:", "\n\nSystem:"]
+        accumulated = ""
+
+        for _ in range(max_tokens):
+            logits = list(self._logits_buf[: self._logits_len])
+            next_token = self._sample(logits, temperature, top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, generated_tokens=generated_tokens)
+            if next_token == TOK_END:
+                break
+            generated_tokens.append(next_token)
+
+            ok = lib.rwkv_eval(
+                self._ctx,
+                next_token,
+                self._state,
+                self._state,
+                self._logits_buf,
+            )
+            if not ok:
+                yield TaskResult(status=Status.ERROR, error="Ошибка оценки модели (eval)")
+                return
+
+            # Декодируем только новый токен
+            new_text = self._decode([next_token])
+            accumulated += new_text
+
+            # Проверка stop sequences
+            should_stop = False
+            for seq in stop_sequences:
+                if seq in accumulated:
+                    should_stop = True
+                    # Обрезаем
+                    accumulated = accumulated[:accumulated.index(seq)]
+                    break
+
+            yield TaskResult(status=Status.OK, data=new_text)
+
+            if should_stop:
+                break
+
+        # Финальный результат
+        text = self._decode(generated_tokens)
+        for seq in stop_sequences:
+            if seq in text:
+                text = text[:text.index(seq)]
+        yield TaskResult(status=Status.OK, data=text.strip())
+
     def _encode(self, text: str) -> list[int]:
         if self._tokenizer is not None:
             return self._tokenizer.encode(text)
@@ -457,7 +551,7 @@ class RwkvCppBackend(BaseBackend):
         return ModelCapabilities(
             name=self.name,
             supports_state=True,
-            supports_streaming=False,
+            supports_streaming=True,
             supports_structured_output=False,
             supports_adapters=False,
             supports_training=False,

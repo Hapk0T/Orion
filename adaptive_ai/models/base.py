@@ -26,6 +26,17 @@ class BaseBackend:
     ) -> TaskResult:
         return TaskResult(status=Status.NOT_SUPPORTED, error="generate не реализован")
 
+    def generate_stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        context: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+    ):
+        yield TaskResult(status=Status.NOT_SUPPORTED, error="generate_stream не реализован")
+
     def capabilities(self) -> ModelCapabilities:
         return ModelCapabilities(name=self.name)
 

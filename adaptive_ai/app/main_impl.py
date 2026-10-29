@@ -78,6 +78,18 @@ class _FallbackBackend:
     def is_loaded(self) -> bool:
         return getattr(self, "_loaded", False)
 
+    def generate_stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        context: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+    ):
+        answer = f"[режим без модели] Получил ваше сообщение: {prompt[:200]}"
+        yield TaskResult(status=Status.OK, data=answer)
+
 
 def _not_supported(feature: str) -> int:
     print(f"Не реализовано: {feature}. Статус: not_supported.")
@@ -194,7 +206,7 @@ def run_cli(args: Any, config: Config) -> int:
 def _cmd_chat(orch: Orchestrator, args: Any, config: Config) -> int:
     message = args.message
     if not message:
-        print("Интерактивный режим диалога. Введите 'exit' для выхода.")
+        print("Интерактивный режим диалога. Введите 'exit' for выхода.")
         while True:
             try:
                 message = input("> ")
@@ -204,25 +216,31 @@ def _cmd_chat(orch: Orchestrator, args: Any, config: Config) -> int:
                 break
             if not message.strip():
                 continue
-            result = orch.model.generate(
+            print("Ответ: ", end="", flush=True)
+            for chunk in orch.model.generate_stream(
                 prompt=message,
                 max_tokens=config.max_tokens,
                 temperature=config.temperature,
                 top_p=config.top_p,
                 top_k=config.top_k,
                 repetition_penalty=config.repetition_penalty,
-            )
-            print(f"Ответ: {result.data or result.error or 'без ответа'}")
+            ):
+                if chunk.status == "ok" and chunk.data:
+                    print(chunk.data, end="", flush=True)
+            print()
         return 0
-    result = orch.model.generate(
+    print("Ответ: ", end="", flush=True)
+    for chunk in orch.model.generate_stream(
         prompt=message,
         max_tokens=config.max_tokens,
         temperature=config.temperature,
         top_p=config.top_p,
         top_k=config.top_k,
         repetition_penalty=config.repetition_penalty,
-    )
-    print(f"Ответ: {result.data or result.error or 'без ответа'}")
+    ):
+        if chunk.status == "ok" and chunk.data:
+            print(chunk.data, end="", flush=True)
+    print()
     return 0
 
 

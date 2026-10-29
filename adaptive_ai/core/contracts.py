@@ -107,7 +107,18 @@ class ModelBackend(Protocol):
         max_tokens: int = 512,
         temperature: float = 0.7,
     ) -> TaskResult:
-        """Сгенерировать текст."""
+        """Сгенерировать текст (полный ответ)."""
+
+    def generate_stream(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        context: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+    ):
+        """Потоковая генерация: yield строк (токенов) по мере генерации."""
 
     def capabilities(self) -> ModelCapabilities:
         """Вернуть информацию о возможностях модели."""
