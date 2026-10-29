@@ -202,10 +202,24 @@ def _cmd_chat(orch: Orchestrator, args: Any, config: Config) -> int:
                 break
             if not message.strip():
                 continue
-            result = orch.model.generate(prompt=message, max_tokens=512, temperature=0.7)
+            result = orch.model.generate(
+                prompt=message,
+                max_tokens=config.max_tokens,
+                temperature=config.temperature,
+                top_p=config.top_p,
+                top_k=config.top_k,
+                repetition_penalty=config.repetition_penalty,
+            )
             print(f"Ответ: {result.data or result.error or 'без ответа'}")
         return 0
-    result = orch.model.generate(prompt=message, max_tokens=512, temperature=0.7)
+    result = orch.model.generate(
+        prompt=message,
+        max_tokens=config.max_tokens,
+        temperature=config.temperature,
+        top_p=config.top_p,
+        top_k=config.top_k,
+        repetition_penalty=config.repetition_penalty,
+    )
     print(f"Ответ: {result.data or result.error or 'без ответа'}")
     return 0
 
