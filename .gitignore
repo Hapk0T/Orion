@@ -76,4 +76,8 @@ training/
 # Test scripts (temporary)
 test_*.py
 test_*.bat
+
+# Generated files
+run.bat
+data/selected_model.txt
 build_rwkv.bat
