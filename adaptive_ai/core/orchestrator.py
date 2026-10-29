@@ -68,6 +68,16 @@ class Orchestrator:
         self._tasks: dict[str, Task] = {}
         self._current: Task | None = None
         self._experience_store = None  # ленивая инициализация
+        self._skill_registry = None  # ленивая инициализация
+        self._selected_skill = None
+
+    @property
+    def skill_registry(self):
+        if self._skill_registry is None:
+            from adaptive_ai.skills.registry import SkillRegistry
+
+            self._skill_registry = SkillRegistry()
+        return self._skill_registry
 
     @property
     def experience_store(self):
@@ -114,8 +124,21 @@ class Orchestrator:
             task.retrieved_memory = [m.__dict__ if hasattr(m, "__dict__") else m for m in memories]
             task.retrieved_sources = sources
 
+            # 3b. Выбрать подходящий навык
+            available_tools = [t.name for t in self.tools.list()]
+            skill = self.skill_registry.select_best(request, available_tools)
+            self._selected_skill = skill
+            if skill:
+                task.plan.append({"step": 0, "action": "skill", "description": f"Навык: {skill.name} v{skill.version}"})
+                # Ограничить инструменты навыком
+                if skill.allowed_tools:
+                    context_skill = f"Навык: {skill.name}. Разрешённые инструменты: {skill.allowed_tools}"
+                else:
+                    context_skill = f"Навык: {skill.name}."
+                context = context_skill
+
             # 4. Сформировать ограниченный контекст
-            context = self._build_context(task, memories, sources)
+            context = self._build_context(task, memories, sources) + (f"\n{context_skill}" if skill else "")
 
             # 5. Получить план или следующее действие модели
             step_count = 0

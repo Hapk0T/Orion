@@ -55,6 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("diagnostics", help="Запуск диагностических тестов")
 
+    skills_parser = sub.add_parser("skills", help="Просмотр и управление навыками")
+    skills_parser.add_argument("action", nargs="?", default="list", help="list, view, check")
+    skills_parser.add_argument("skill_id", nargs="?", help="ID навыка")
+
+    mcp_parser = sub.add_parser("mcp", help="Управление MCP-серверами")
+    mcp_parser.add_argument("action", nargs="?", default="status", help="status, list")
+
     exp_parser = sub.add_parser("experience", help="Просмотр накопленного опыта")
     exp_parser.add_argument("action", nargs="?", default="stats", help="stats, list, confirmed, failed, training")
     exp_parser.add_argument("--limit", type=int, default=10, help="Лимит записей")

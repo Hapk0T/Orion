@@ -1,0 +1,21 @@
+{
+  "id": "calculator_skill",
+  "name": "Калькулятор",
+  "version": "1.0.0",
+  "description": "Вычисление арифметических выражений",
+  "purpose": "вычисление математических выражений",
+  "constraints": ["Только безопасная арифметика", "Без импортов"],
+  "required_inputs": ["expression"],
+  "algorithm": "1. Получить выражение от пользователя. 2. Проверить безопасность (только цифры и операторы). 3. Вычислить результат. 4. Вернуть результат.",
+  "allowed_tools": ["calculator", "python_calc"],
+  "examples": [
+    {"input": "2+2", "output": "4"},
+    {"input": "10*5", "output": "50"}
+  ],
+  "test_cases": [
+    {"input": "2+2", "expected": 4},
+    {"input": "10*5", "expected": 50},
+    {"input": "100/4", "expected": 25.0}
+  ],
+  "changelog": ["v1.0.0: начальная версия"]
+}

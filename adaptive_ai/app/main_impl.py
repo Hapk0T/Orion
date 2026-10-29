@@ -167,6 +167,10 @@ def run_cli(args: Any, config: Config) -> int:
         return _not_supported("mem-clear (архивация)")
     if cmd == "diagnostics":
         return _cmd_diagnostics(orch)
+    if cmd == "skills":
+        return _cmd_skills(orch, args)
+    if cmd == "mcp":
+        return _cmd_mcp(orch, args)
     if cmd == "experience":
         return _cmd_experience(orch, args)
     if cmd == "eval":
@@ -472,6 +476,95 @@ def _cmd_experience(orch: Orchestrator, args: Any) -> int:
         return 0
 
     print(f"Неизвестное действие: {action}. Используйте stats, list, confirmed, failed, training.")
+    return 1
+
+
+def _cmd_skills(orch: Orchestrator, args: Any) -> int:
+    registry = orch.skill_registry
+    action = args.action or "list"
+
+    if action == "list":
+        skills = registry.list()
+        if not skills:
+            print("Навыки не найдены. Добавьте JSON-файлы в каталог skills/.")
+            return 0
+        print("=== Навыки ===")
+        for s in skills:
+            available = registry.check_availability(s.id, [t.name for t in orch.tools.list()])
+            status = "✅" if available else "❌"
+            print(f"  {status} {s.id} v{s.version}: {s.name}")
+            print(f"      {s.purpose[:80]}")
+            print(f"      Инструменты: {s.allowed_tools or 'все'}")
+            issues = s.validate()
+            if issues:
+                print(f"      Проблемы: {issues}")
+        return 0
+
+    if action == "view":
+        skill_id = args.skill_id
+        if not skill_id:
+            print("Укажите ID навыка: skills view <id>")
+            return 1
+        skill = registry.get(skill_id)
+        if not skill:
+            print(f"Навык не найден: {skill_id}")
+            return 1
+        print(f"=== Навык: {skill.name} v{skill.version} ===")
+        print(f"ID: {skill.id}")
+        print(f"Назначение: {skill.purpose}")
+        print(f"Ограничения: {skill.constraints}")
+        print(f"Требуемые входы: {skill.required_inputs}")
+        print(f"Алгоритм: {skill.algorithm[:200]}")
+        print(f"Разрешённые инструменты: {skill.allowed_tools or 'все'}")
+        print(f"Примеры: {len(skill.examples)}")
+        print(f"Тесты: {len(skill.test_cases)}")
+        print(f"Версия: {skill.version}")
+        print(f"Отпечаток: {skill.fingerprint()}")
+        return 0
+
+    if action == "check":
+        skill_id = args.skill_id
+        if not skill_id:
+            print("Укажите ID навыка: skills check <id>")
+            return 1
+        skill = registry.get(skill_id)
+        if not skill:
+            print(f"Навык не найден: {skill_id}")
+            return 1
+        issues = skill.validate()
+        available = registry.check_availability(skill_id, [t.name for t in orch.tools.list()])
+        print(f"Навык: {skill.name} v{skill.version}")
+        print(f"Доступен: {'да' if available else 'нет'}")
+        print(f"Проблемы: {issues if issues else 'нет'}")
+        return 0
+
+    print(f"Неизвестное действие: {action}. Используйте list, view, check.")
+    return 1
+
+
+def _cmd_mcp(orch: Orchestrator, args: Any) -> int:
+    from adaptive_ai.tools.mcp_bridge import McpBridge
+
+    bridge = McpBridge()
+    action = args.action or "status"
+
+    if action == "status":
+        print("=== MCP-статус ===")
+        print(f"SDK доступен: {bridge.is_available()}")
+        print(f"Подключённые серверы: {bridge.list_servers()}")
+        if not bridge.is_available():
+            print("Для подключения MCP: pip install mcp")
+        return 0
+
+    if action == "list":
+        print("Подключённые MCP-серверы:")
+        for s in bridge.list_servers():
+            print(f"  {s}")
+        if not bridge.list_servers():
+            print("  (нет)")
+        return 0
+
+    print(f"Неизвестное действие: {action}. Используйте status, list.")
     return 1
 
 
