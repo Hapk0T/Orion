@@ -29,10 +29,28 @@ cmake --build build --config Release -j2
 ### 5. rwkv.cpp библиотека не найдена
 **Решение:** Соберите библиотеку (см. пункт 2 или Dockerfile) или укажите `RWKV_CPP_LIB`.
 
-### 6. generate() возвращает not_supported
-**Причина:** Модель не загружена (путь не указан или файл не существует).
-**Статус:** Этап 1 — бэкенд реализован, требуется файл модели RWKV в формате rwkv.cpp (.bin).
-
-### 7. Токенизация некорректна
+### 6. generate() возвращает некорректный текст или ошибку токенизации
 **Причина:** Используется простой байтовый токенизатор (каждый байт UTF-8 = токен).
-**Решение:** Для качественной генерации подключить полноценный BPE-токенизатор RWKV.
+RWKV-7 World использует RWKV World Tokenizer (vocab 65536). Без полноценного токенизатора генерация будет работать, но качество текста будет низким.
+**Решение:** Для качественной генерации подключить RWKV World Tokenizer (`rwkv_vocab_v20230424.txt`) и токенизацию на основе BPE.
+
+### 7. Модель RWKV-7 World не загружается (ошибка формата)
+**Причина:** rwkv.cpp требует модель в собственном формате `.bin` (ggml), а не `.pth`.
+**Решение:** Конвертировать через `python rwkv\convert_pytorch_to_ggml.py <model.pth> <output.bin> FP16`, затем опционально квантовать через `quantize.py`.
+
+### 8. "Illegal instruction" при запуске rwkv.cpp
+**Причина:** CPU не поддерживает AVX2 (i7-3612QM — Ivy Bridge).
+**Решение:** Собрать rwkv.cpp с флагами `-DRWKV_AVX2=OFF -DRWKV_AVX=OFF -DRWKV_FMA=OFF`.
+В Dockerfile уже задан `RWKV_CPP_BUILD_FLAGS`.
+
+### 9. Нет компилятора C/C++ для сборки rwkv.cpp
+**Решение:** Установить LLVM-MinGW через winget:
+```
+winget install MartinStorsjo.LLVM-MinGW.UCRT
+```
+Затем собрать:
+```
+cd rwkv.cpp
+cmake -S . -B build -G "MinGW Makefiles" -DRWKV_AVX2=OFF -DRWKV_AVX=OFF -DRWKV_FMA=OFF -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+cmake --build build --config Release -j2
+```
