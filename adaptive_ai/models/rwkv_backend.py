@@ -292,6 +292,9 @@ class RwkvCppBackend(BaseBackend):
         tools: list[dict[str, Any]] | None = None,
         max_tokens: int = 512,
         temperature: float = 0.7,
+        top_p: float = 0.85,
+        top_k: int = 40,
+        repetition_penalty: float = 1.1,
     ) -> TaskResult:
         if not self._loaded or self._ctx is None or self._lib_wrapper is None:
             return TaskResult(status=Status.ERROR, error="Модель не загружена")
@@ -326,9 +329,10 @@ class RwkvCppBackend(BaseBackend):
             return TaskResult(status=Status.ERROR, error="Ошибка оценки модели (eval_sequence)")
 
         generated_tokens: list[int] = []
+        stop_sequences = [b"\n\nUser:", b"\n\nAssistant:", b"\n\nSystem:"]
         for _ in range(max_tokens):
             logits = list(self._logits_buf[: self._logits_len])
-            next_token = self._sample(logits, temperature)
+            next_token = self._sample(logits, temperature, top_p=top_p, top_k=top_k, repetition_penalty=repetition_penalty, generated_tokens=generated_tokens)
             if next_token == TOK_END:
                 break
             generated_tokens.append(next_token)
@@ -343,12 +347,26 @@ class RwkvCppBackend(BaseBackend):
             if not ok:
                 return TaskResult(status=Status.ERROR, error="Ошибка оценки модели (eval)")
 
+            # Проверка stop sequences
+            decoded_so_far = self._decode(generated_tokens)
+            should_stop = False
+            for seq in stop_sequences:
+                if seq.decode("utf-8", errors="replace") in decoded_so_far:
+                    should_stop = True
+                    break
+            if should_stop:
+                break
+
         try:
             text = self._decode(generated_tokens)
+            # Обрезаем по stop sequence
+            for seq in ["\n\nUser:", "\n\nAssistant:", "\n\nSystem:"]:
+                if seq in text:
+                    text = text[:text.index(seq)]
         except Exception as exc:  # noqa: BLE001
             return TaskResult(status=Status.ERROR, error=f"Ошибка декодирования: {exc}")
 
-        return TaskResult(status=Status.OK, data=text)
+        return TaskResult(status=Status.OK, data=text.strip())
 
     def _encode(self, text: str) -> list[int]:
         if self._tokenizer is not None:
@@ -364,9 +382,27 @@ class RwkvCppBackend(BaseBackend):
         return raw.decode("utf-8", errors="replace")
 
     @staticmethod
-    def _sample(logits: list[float], temperature: float, top_p: float = 0.85) -> int:
+    def _sample(
+        logits: list[float],
+        temperature: float = 0.7,
+        top_p: float = 0.85,
+        top_k: int = 40,
+        repetition_penalty: float = 1.1,
+        generated_tokens: list[int] | None = None,
+    ) -> int:
+        import random
+
         if temperature <= 0:
             return max(range(len(logits)), key=lambda i: logits[i])
+
+        # Repetition penalty
+        if generated_tokens and repetition_penalty != 1.0:
+            for tok in set(generated_tokens):
+                if 0 <= tok < len(logits):
+                    if logits[tok] > 0:
+                        logits[tok] /= repetition_penalty
+                    else:
+                        logits[tok] *= repetition_penalty
 
         # Temperature scaling
         max_logit = max(logits)
@@ -375,20 +411,38 @@ class RwkvCppBackend(BaseBackend):
         total = sum(exps)
         probs = [e / total for e in exps]
 
+        # Top-k: ограничиваем до top_k токенов
+        if top_k > 0 and top_k < len(probs):
+            sorted_indices = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)
+            top_k_indices = set(sorted_indices[:top_k])
+            for i in range(len(probs)):
+                if i not in top_k_indices:
+                    probs[i] = 0.0
+            # Перенормировка
+            total = sum(probs)
+            if total > 0:
+                probs = [p / total for p in probs]
+
         # Top-p (nucleus) sampling
         sorted_indices = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)
         cumsum = 0.0
         nucleus = []
         for idx in sorted_indices:
+            if probs[idx] <= 0:
+                continue
             cumsum += probs[idx]
             nucleus.append(idx)
             if cumsum >= top_p:
                 break
 
+        if not nucleus:
+            nucleus = [sorted_indices[0]]
+
         # Перенормировка вероятностей внутри nucleus
         nucleus_probs = [probs[i] for i in nucleus]
         nucleus_total = sum(nucleus_probs)
-        nucleus_probs = [p / nucleus_total for p in nucleus_probs]
+        if nucleus_total > 0:
+            nucleus_probs = [p / nucleus_total for p in nucleus_probs]
 
         # Случайный выбор из nucleus
         r = random.random()
