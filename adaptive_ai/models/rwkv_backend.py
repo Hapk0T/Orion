@@ -95,15 +95,27 @@ class _RwkvWorldTokenizer:
     def __init__(self, vocab_path: str | None = None) -> None:
         self._idx2token: dict[int, bytes] = {}
         self._token2idx: dict[bytes, int] = {}
-        self._table: list[list[list[bytes]]] = [[[] for _ in range(256)] for _ in range(256)]
-        self._good: list[set[int]] = [set() for _ in range(256)]
-        self._wlen: list[int] = [0 for _ in range(256)]
+        self._trie = None
+        self._fallback = False
 
+        # Попытка использовать оптимизированный TRIE_TOKENIZER из rwkv пакета
         if vocab_path and Path(vocab_path).exists():
+            try:
+                from rwkv.rwkv_tokenizer import TRIE_TOKENIZER
+                self._trie = TRIE_TOKENIZER(vocab_path)
+                self._use_trie = True
+                # Заполняем idx2token для decode
+                self._idx2token = dict(self._trie.idx2token)
+                return
+            except Exception:  # noqa: BLE001
+                pass
+            # Fallback: собственная реализация
             self._load_vocab(vocab_path)
+            self._use_trie = False
         else:
             self._fallback = True
-        self._fallback = not bool(self._idx2token)
+            self._use_trie = False
+        self._fallback = not bool(self._idx2token) and self._trie is None
 
     def _load_vocab(self, vocab_path: str) -> None:
         with open(vocab_path, "r", encoding="utf-8") as f:
@@ -134,6 +146,8 @@ class _RwkvWorldTokenizer:
                 self._good[s0].add(s1)
 
     def encode(self, text: str) -> list[int]:
+        if getattr(self, "_use_trie", False) and self._trie is not None:
+            return self._trie.encode(text)
         if self._fallback:
             raw = text.encode("utf-8")
             return [b for b in raw]
@@ -167,6 +181,8 @@ class _RwkvWorldTokenizer:
         return tokens
 
     def decode(self, tokens: list[int]) -> str:
+        if getattr(self, "_use_trie", False) and self._trie is not None:
+            return self._trie.decode(tokens)
         raw = b"".join(self._idx2token.get(t, b"") for t in tokens)
         return raw.decode("utf-8", errors="replace")
 
