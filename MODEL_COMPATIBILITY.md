@@ -9,6 +9,7 @@
 | RWKV-7-World-0.1B | ~100M | rwkv.cpp Q4_0 | ~0.5 GB | i7-3612QM (нет AVX2) | Не проверено |
 | RWKV-7-World-0.4B | ~400M | rwkv.cpp Q4_0 | ~1 GB | i7-3612QM (нет AVX2) | Не проверено |
 | RWKV-7-World-1.5B | ~1.5B | rwkv.cpp Q4_0 | ~2 GB | i7-3612QM (нет AVX2) | Не проверено |
+| RWKV7-G1k-13.3B | 13.3B | rwkv.cpp Q4_0 | ~6.7 GB | i7-3612QM (нет AVX2) | ❌ Не реалистично для целевого железа |
 
 ## Требования к CPU
 
@@ -32,21 +33,26 @@ cmake --build build --config Release -j2
 # Библиотека: build/bin/librwkv.dll
 ```
 
-## Загрузка и конвертация модели RWKV-7 World
+## Загрузка и конвертация модели RWKV-7 World / RWKV7-G1k
 
 По ТЗ автоматические сетевые загрузки запрещены. Модель скачивается и конвертируется вручную.
 
 ### 1. Скачать модель с Hugging Face
 
-```
-https://huggingface.co/BlinkDL/rwkv-7-world
-```
+Выберите вариант в зависимости от железа:
 
-Рекомендуемые варианты для целевого железа (i7-3612QM, 16 GB RAM, HDD):
-- `RWKV-7-World-0.1B-v2.8-20241210-ctx4096.pth` — smallest, ~200 MB
-- `RWKV-7-World-0.4B-v2.8-20241210-ctx4096.pth` — ~400 MB
+| Модель | Размер .pth | RAM (Q4_0) | Для какого железа |
+|--------|-------------|------------|-------------------|
+| `RWKV7-G1k-0.1B-20260930` | ~200 MB | ~0.5 GB | i7-3612QM, 16 GB RAM ✅ |
+| `RWKV7-G1k-0.4B-20260930` | ~400 MB | ~1 GB | i7-3612QM, 16 GB RAM ✅ |
+| `RWKV7-G1k-1.5B-20260930` | ~1.5 GB | ~2 GB | i7-3612QM, 16 GB RAM ⚠️ |
+| `RWKV7-G1k-13.3B-20260930` | ~26 GB | ~6.7 GB | ❌ i7-3612QM — нереалистично |
 
-Положить `.pth` файл в `C:\Orion\models\`.
+Ссылки:
+- https://huggingface.co/RWKV/RWKV7-G1k-13.3B-20260930
+- https://huggingface.co/BlinkDL/rwkv-7-world
+
+Положите `.pth` файл в `C:\Orion\models\`.
 
 ### 2. Установить зависимости для конвертации
 
@@ -58,19 +64,19 @@ pip install torch numpy
 
 ```cmd
 cd C:\Orion\rwkv.cpp
-python python\convert_pytorch_to_ggml.py C:\Orion\models\RWKV-7-World-0.1B-v2.8-20241210-ctx4096.pth C:\Orion\models\rwkv-7-world-0.1B.bin FP16
+python python\convert_pytorch_to_ggml.py C:\Orion\models\<имя_модели>.pth C:\Orion\models\<имя_модели>.bin FP16
 ```
 
-### 4. Квантовать (опционально, но рекомендуется для слабого железа)
+### 4. Квантовать (обязательно для слабого железа)
 
 ```cmd
-python python\quantize.py C:\Orion\models\rwkv-7-world-0.1B.bin C:\Orion\models\rwkv-7-world-0.1B-Q4_0.bin Q4_0
+python python\quantize.py C:\Orion\models\<имя_модели>.bin C:\Orion\models\<имя_модели>-Q4_0.bin Q4_0
 ```
 
 ### 5. Указать путь к модели
 
 ```cmd
-set ADAPTIVE_AI_MODEL_PATH=C:\Orion\models\rwkv-7-world-0.1B-Q4_0.bin
+set ADAPTIVE_AI_MODEL_PATH=C:\Orion\models\<имя_модели>-Q4_0.bin
 set RWKV_CPP_LIB=C:\Orion\rwkv.cpp\build\bin\librwkv.dll
 ```
 
@@ -80,6 +86,16 @@ set RWKV_CPP_LIB=C:\Orion\rwkv.cpp\build\bin\librwkv.dll
 python -m adaptive_ai.app.main status
 python -m adaptive_ai.app.main chat "Привет"
 ```
+
+### Ограничение 13.3B на целевом железе
+
+Модель `RWKV7-G1k-13.3B` (13,270,298,624 параметров, 61 слоев, hidden 4096) технически поддерживается rwkv.cpp, но на i7-3612QM с 16 GB DDR3 и HDD:
+
+- Даже Q4_0 квантование (~6.7 GB) оставляет менее 9 GB на ОС, Python и буферы
+- HDD делает загрузку модели и генерацию крайне медленными
+- Рекомендуется использовать на более мощном оборудовании (32+ GB RAM, SSD)
+
+Для проверки работоспособности системы начните с 0.1B или 0.4B.
 
 ## Совместимость форматов rwkv.cpp
 
