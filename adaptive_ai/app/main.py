@@ -77,6 +77,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("training-status", help="Просмотр статуса обучения и версий модели")
 
+    train_parser = sub.add_parser("train", help="Управление обучением")
+    train_parser.add_argument("action", nargs="?", default="status", help="status, check, prepare, run, eval, promote")
+    train_parser.add_argument("--model", help="Путь к базовой модели")
+    train_parser.add_argument("--dataset", help="Путь к обучающему набору")
+    train_parser.add_argument("--artifact", help="Путь к артефакту кандидата")
+    train_parser.add_argument("--exp-id", help="ID эксперимента")
+
     return parser
 
 

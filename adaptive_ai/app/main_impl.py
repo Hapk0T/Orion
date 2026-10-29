@@ -179,6 +179,8 @@ def run_cli(args: Any, config: Config) -> int:
         return _cmd_tools(orch, args)
     if cmd == "training-status":
         return _cmd_training_status(config)
+    if cmd == "train":
+        return _cmd_train(orch, args, config)
 
     print(f"Неизвестная команда: {cmd}")
     return 1
@@ -584,6 +586,99 @@ def _cmd_diagnostics(orch: Orchestrator) -> int:
     print(f"Инструменты зарегистрированы: {len(orch.tools.list())}")
     print("Диагностика завершена.")
     return 0
+
+
+def _cmd_train(orch: Orchestrator, args: Any, config: Config) -> int:
+    from adaptive_ai.learning.trainer import get_trainer
+    from adaptive_ai.learning.dataset_builder import DatasetBuilder
+    from adaptive_ai.learning.experience import ExperienceStore
+    from adaptive_ai.learning.promotion import Promotion
+
+    trainer = get_trainer(str(config.training_dir))
+    action = args.action or "status"
+
+    if action == "status":
+        print("=== Статус обучения ===")
+        print(f"Обучение разрешено: {config.allow_training}")
+        print(f"Директория обучения: {config.training_dir}")
+        # Проверка совместимости
+        compat = trainer.check_compatibility(orch.model)
+        print(f"Совместимость: {compat.data if compat.status == 'ok' else compat.error}")
+        res_check = trainer.check_resources()
+        print(f"Ресурсы: {res_check.data if res_check.status == 'ok' else res_check.error}")
+        return 0
+
+    if action == "check":
+        compat = trainer.check_compatibility(orch.model)
+        print(f"Совместимость: {compat.status} — {compat.data or compat.error}")
+        res_check = trainer.check_resources()
+        print(f"Ресурсы: {res_check.status} — {res_check.data or res_check.error}")
+        return 0
+
+    if action == "prepare":
+        # Подготовить набор из опыта
+        store = orch.experience_store
+        builder = DatasetBuilder()
+        dataset = builder.build_from_experience(store)
+        val_result = builder.validate(dataset)
+        prep_result = trainer.prepare_dataset(dataset.to_dict() if hasattr(dataset, "to_dict") else dataset)
+        print(f"Набор: {prep_result.data if prep_result.status == 'ok' else prep_result.error}")
+        if val_result.data and val_result.data.get("warnings"):
+            print(f"Предупреждения: {val_result.data['warnings']}")
+        return 0
+
+    if action == "run":
+        if not config.allow_training:
+            print("Обучение отключено. Установите ADAPTIVE_AI_ALLOW_TRAINING=1")
+            return 1
+        dataset_path = args.dataset
+        if not dataset_path:
+            print("Укажите --dataset <path>")
+            return 1
+        import json
+        from pathlib import Path
+
+        ds_data = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
+        config_exp = {
+            "base_model_id": orch.model.name,
+            "base_model_checksum": "unknown",
+            "dataset_version": ds_data.get("id", "unknown"),
+            "params": {"epochs": 1, "lr": 1e-4},
+        }
+        result = trainer.run_experiment(config_exp)
+        print(f"Эксперимент: {result.data if result.status == 'ok' else result.error}")
+        return 0
+
+    if action == "eval":
+        model_path = args.model
+        if not model_path:
+            print("Укажите --model <path>")
+            return 1
+        result = trainer.evaluate(model_path, None)
+        print(f"Оценка: {result.data if result.status == 'ok' else result.error}")
+        return 0
+
+    if action == "promote":
+        artifact_path = args.artifact
+        if not artifact_path:
+            print("Укажите --artifact <path>")
+            return 1
+        promotion = Promotion()
+        result = promotion.approve(artifact_path, version="candidate", config={})
+        print(f"Одобрение: {result.data if result.status == 'ok' else result.error}")
+        return 0
+
+    if action == "status-exp":
+        exp_id = args.exp_id
+        if not exp_id:
+            print("Укажите --exp-id <id>")
+            return 1
+        result = trainer.get_status(exp_id)
+        print(f"Статус: {result.data if result.status == 'ok' else result.error}")
+        return 0
+
+    print(f"Неизвестное действие: {action}. Используйте status, check, prepare, run, eval, promote, status-exp.")
+    return 1
 
 
 def _cmd_training_status(config: Config) -> int:
