@@ -68,3 +68,4 @@ logs/
 # rwkv.cpp build artifacts
 rwkv.cpp/
 rwkv_build/
+build_rwkv.bat
