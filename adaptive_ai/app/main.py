@@ -56,7 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("diagnostics", help="Запуск диагностических тестов")
 
     models_parser = sub.add_parser("models", help="Просмотр и выбор моделей")
-    models_parser.add_argument("action", nargs="?", default="list", help="list, select, info")
+    models_parser.add_argument("action", nargs="?", default="list", help="list, select, info, search-best")
+
+    search_best_parser = sub.add_parser("search-best", help="Найти наиболее сбалансированную модель по точности и скорости")
 
     skills_parser = sub.add_parser("skills", help="Просмотр и управление навыками")
     skills_parser.add_argument("action", nargs="?", default="list", help="list, view, check")

@@ -170,6 +170,8 @@ def run_cli(args: Any, config: Config) -> int:
         return _cmd_diagnostics(orch)
     if cmd == "models":
         return _cmd_models(orch, args, config)
+    if cmd == "search-best":
+        return _cmd_search_best(orch, args, config)
     if cmd == "skills":
         return _cmd_skills(orch, args)
     if cmd == "mcp":
@@ -587,6 +589,39 @@ def _cmd_mcp(orch: Orchestrator, args: Any) -> int:
     return 1
 
 
+def _cmd_search_best(orch: Orchestrator, args: Any, config: Config) -> int:
+    from adaptive_ai.models.model_selector import (
+        search_best_balanced_model,
+        get_model_info_summary,
+        select_model_with_cache,
+    )
+
+    print("=== Поиск наиболее сбалансированной модели ===")
+    print(f"Бюджет ОЗУ: {config.max_ram_ratio * 100:.0f}%")
+
+    # Показываем все модели с балансом
+    summary = get_model_info_summary(config.models_dir)
+    print(f"Найдено моделей: {summary['models_found']}")
+    print()
+
+    best = search_best_balanced_model(config.models_dir, ram_budget_ratio=config.max_ram_ratio)
+    if best is None:
+        print("Модели не найдены.")
+        return 1
+
+    print(f"Выбрана: {best.name}")
+    print(f"  Путь: {best.path}")
+    print(f"  Размер: {best.size_params}B | Квантование: {best.quantization}")
+    print(f"  Файл: {best.file_size_bytes / 1024**3:.2f} GB | RAM: {best.estimated_ram_bytes / 1024**3:.2f} GB")
+
+    # Кэшируем
+    from adaptive_ai.models.model_selector import cache_model
+    cache_model(best.path)
+    print(f"\nРезультат кэширован в data/selected_model.txt")
+
+    return 0
+
+
 def _cmd_models(orch: Orchestrator, args: Any, config: Config) -> int:
     from adaptive_ai.models.model_selector import get_model_info_summary, select_best_model
 
@@ -608,7 +643,7 @@ def _cmd_models(orch: Orchestrator, args: Any, config: Config) -> int:
         return 0
 
     if action == "select":
-        best = select_best_model(config.models_dir, ram_budget_ratio=0.8)
+        best = select_best_model(config.models_dir, ram_budget_ratio=config.max_ram_ratio)
         if best is None:
             print("Модели не найдены в", config.models_dir)
             return 1
@@ -618,6 +653,9 @@ def _cmd_models(orch: Orchestrator, args: Any, config: Config) -> int:
         print(f"  Файл: {best.file_size_bytes / 1024**3:.2f} GB | RAM: {best.estimated_ram_bytes / 1024**3:.2f} GB")
         print(f"\nДля использования: set ADAPTIVE_AI_MODEL_PATH={best.path}")
         return 0
+
+    if action == "search-best":
+        return _cmd_search_best(orch, args, config)
 
     if action == "info":
         summary = get_model_info_summary(config.models_dir)

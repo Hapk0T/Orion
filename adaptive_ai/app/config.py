@@ -151,11 +151,11 @@ class Config:
         if mp and mp != "auto" and mp != "None":
             self.model_path = mp
         elif self.model_path is None:
-            # Автовыбор
+            # Автовыбор с кэшированием
             try:
-                from adaptive_ai.models.model_selector import select_best_model
+                from adaptive_ai.models.model_selector import select_model_with_cache
 
-                best = select_best_model(self.models_dir, ram_budget_ratio=self.max_ram_ratio)
+                best = select_model_with_cache(self.models_dir, ram_budget_ratio=self.max_ram_ratio)
                 if best is not None:
                     self.model_path = best.path
             except Exception:  # noqa: BLE001

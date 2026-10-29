@@ -136,6 +136,130 @@ def select_best_model(models_dir: str | Path, ram_budget_ratio: float = 0.8) -> 
     return fitting[0]
 
 
+def search_best_balanced_model(
+    models_dir: str | Path,
+    ram_budget_ratio: float = 0.8,
+    accuracy_weight: float = 0.6,
+    speed_weight: float = 0.4,
+) -> ModelInfo | None:
+    """Найти наиболее сбалансированную по точности и скорости модель.
+
+    Баланс = accuracy_weight * (size_params / max_size) + speed_weight * (1 - ram_usage_ratio)
+    где ram_usage_ratio = estimated_ram / budget
+
+    Предпочитает модели, которые:
+    - Используют 50-80% бюджета (не слишком маленькие, не слишком большие)
+    - Имеют высокую точность (FP16 > Q8 > Q5 > Q4)
+    - Не слишком медленные (меньше модель = быстрее)
+
+    Кэширует результат в data/selected_model.txt для ускорения.
+    """
+    try:
+        import psutil
+        total_ram = psutil.virtual_memory().total
+    except ImportError:
+        total_ram = 16 * 1024**3
+
+    budget = int(total_ram * ram_budget_ratio)
+
+    models = scan_models(models_dir)
+    if not models:
+        return None
+
+    # Фильтруем модели, которые помещаются в бюджет
+    fitting = [m for m in models if m.estimated_ram_bytes <= budget]
+    if not fitting:
+        fitting = [min(models, key=lambda m: m.estimated_ram_bytes)]
+
+    if len(fitting) == 1:
+        return fitting[0]
+
+    # Нормализация размера
+    max_size = max(m.size_params for m in fitting) if fitting else 1.0
+    if max_size == 0:
+        max_size = 1.0
+
+    # Вычисляем баланс для каждой модели
+    scored = []
+    for m in fitting:
+        size_norm = m.size_params / max_size  # 0..1
+        ram_usage_ratio = m.estimated_ram_bytes / budget  # 0..1
+        # Предпочтение моделей, использующих 50-80% бюджета
+        if ram_usage_ratio < 0.3:
+            usage_score = ram_usage_ratio / 0.3  # штраф за слишком маленькую
+        elif ram_usage_ratio <= 0.8:
+            usage_score = 1.0  # идеальный диапазон
+        else:
+            usage_score = 1.0 - (ram_usage_ratio - 0.8) / 0.2  # штраф за слишком большую
+
+        # Точность: нормализованная по точности
+        accuracy_score = (m.precision_rank / 6.0) * size_norm
+
+        # Скорость: меньше RAM = быстрее (обратная зависимость)
+        speed_score = 1.0 - ram_usage_ratio
+
+        # Итоговый баланс
+        balance = (
+            accuracy_weight * accuracy_score
+            + speed_weight * speed_score
+            + 0.2 * usage_score  # бонус за оптимальное использование
+        )
+
+        scored.append((m, balance))
+
+    # Сортируем по балансу (убывание)
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    return scored[0][0]
+
+
+def get_cached_model(models_dir: str | Path, cache_file: str | Path = "data/selected_model.txt") -> str | None:
+    """Получить путь к кэшированной модели, если файл существует и модель есть."""
+    cache_path = Path(cache_file)
+    if not cache_path.exists():
+        return None
+    try:
+        cached_path = cache_path.read_text(encoding="utf-8").strip()
+        if cached_path and Path(cached_path).exists():
+            return cached_path
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def cache_model(model_path: str, cache_file: str | Path = "data/selected_model.txt") -> None:
+    """Сохранить выбор модели в кэш."""
+    cache_path = Path(cache_file)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(model_path, encoding="utf-8")
+
+
+def select_model_with_cache(
+    models_dir: str | Path,
+    ram_budget_ratio: float = 0.8,
+    cache_file: str | Path = "data/selected_model.txt",
+) -> ModelInfo | None:
+    """Выбрать модель с использованием кэша.
+
+    Если кэш существует и модель есть — используем кэш (не пересканируем).
+    Иначе — сканируем и кэшируем результат.
+    """
+    cached = get_cached_model(models_dir, cache_file)
+    if cached:
+        # Проверяем, что кэшированная модель всё ещё существует
+        if Path(cached).exists():
+            # Находим ModelInfo для кэшированной модели
+            models = scan_models(models_dir)
+            for m in models:
+                if m.path == cached:
+                    return m
+    # Кэш не найден или устарел — сканируем
+    best = search_best_balanced_model(models_dir, ram_budget_ratio)
+    if best is not None:
+        cache_model(best.path, cache_file)
+    return best
+
+
 def get_model_info_summary(models_dir: str | Path) -> dict[str, Any]:
     """Получить сводку по всем моделям."""
     models = scan_models(models_dir)
