@@ -129,6 +129,7 @@ def run_cli(args: Any, config: Config) -> int:
         from adaptive_ai.core.error_monitor import ErrorMonitor
         from adaptive_ai.core.guard_engine import GuardEngine
         from adaptive_ai.core.policies import SafetyPolicy, ResourcePolicy
+        from adaptive_ai.core.resource_monitor import ResourceMonitor
 
         orch = Orchestrator(
             model=backend,
@@ -143,6 +144,7 @@ def run_cli(args: Any, config: Config) -> int:
             ),
             error_monitor=ErrorMonitor(),
             guard_engine=GuardEngine(),
+            resource_monitor=ResourceMonitor(max_ram_mb=config.max_ram_mb),
         )
 
         # Загрузка опыта из журнала
@@ -273,6 +275,10 @@ def _cmd_status(orch: Orchestrator, config: Config) -> int:
     print(f"Сеть разрешена: {config.allow_network}")
     print(f"Обучение разрешено: {config.allow_training}")
     print(f"Инструменты: {[t.name for t in orch.tools.list()]}")
+    # Потребление ОЗУ
+    ram = orch.resource_monitor.snapshot()
+    print(f"ОЗУ процесса: {ram.rss_mb:.0f} MB (пик: {orch.resource_monitor.get_peak_rss():.0f} MB)")
+    print(f"ОЗУ системы: {ram.system_used_percent:.1f}% ({ram.system_available_mb:.0f} MB доступно)")
     return 0
 
 

@@ -19,6 +19,7 @@ from .contracts import (
 from .error_monitor import ErrorMonitor
 from .guard_engine import GuardEngine
 from .policies import ResourcePolicy, SafetyPolicy, TaskOutcome
+from .resource_monitor import ResourceMonitor
 
 
 @dataclass
@@ -57,6 +58,7 @@ class Orchestrator:
         resources: ResourcePolicy | None = None,
         error_monitor: ErrorMonitor | None = None,
         guard_engine: GuardEngine | None = None,
+        resource_monitor: ResourceMonitor | None = None,
     ) -> None:
         self.model = model
         self.memory = memory
@@ -65,6 +67,7 @@ class Orchestrator:
         self.resources = resources or ResourcePolicy()
         self.error_monitor = error_monitor or ErrorMonitor()
         self.guard_engine = guard_engine or GuardEngine()
+        self.resource_monitor = resource_monitor or ResourceMonitor(max_ram_mb=resources.max_ram_mb if resources else 8192)
         self._tasks: dict[str, Task] = {}
         self._current: Task | None = None
         self._experience_store = None  # ленивая инициализация
@@ -152,6 +155,17 @@ class Orchestrator:
                     )
                     task.status = TaskStatus.FAILED
                     return TaskResult(status=Status.BUDGET_EXHAUSTED, error=task.outcome.message, task_id=task.id)
+
+                # Проверка бюджета ОЗУ
+                ram_check = self.resource_monitor.check_budget()
+                if not ram_check["ok"]:
+                    task.outcome = TaskOutcome(
+                        kind="constraint",
+                        message=f"Превышен бюджет ОЗУ: {ram_check['rss_mb']} MB > {ram_check['budget_mb']} MB",
+                        details=ram_check,
+                    )
+                    task.status = TaskStatus.FAILED
+                    return TaskResult(status=Status.CONSTRAINT_VIOLATED, error=task.outcome.message, task_id=task.id)
 
                 # 5a. Спросить модель, какое действие выполнить
                 action = self._ask_model_for_action(task, context)
