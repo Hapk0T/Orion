@@ -69,6 +69,10 @@ logs/
 rwkv.cpp/
 rwkv_build/
 
+# Experiment artifacts
+experiments/
+training/
+
 # Test scripts (temporary)
 test_*.py
 test_*.bat
