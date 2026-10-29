@@ -298,13 +298,14 @@ class RwkvCppBackend(BaseBackend):
 
         lib = self._lib_wrapper.lib
 
-        full_prompt = ""
-        if system_prompt:
-            full_prompt += f"System: {system_prompt}\n\n"
-        if context:
-            full_prompt += f"Context: {context}\n\n"
-        # RWKV World prompt format (по рекомендациям разработчиков)
-        full_prompt += f"User: {prompt}\n\nAssistant:"
+        from adaptive_ai.core.formats import PromptTemplate
+
+        template = PromptTemplate(
+            system_prompt=system_prompt or "",
+            context=context or "",
+            user_message=prompt,
+        )
+        full_prompt = template.render_chat()
 
         try:
             tokens = self._encode(full_prompt)

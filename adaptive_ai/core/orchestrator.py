@@ -276,23 +276,43 @@ class Orchestrator:
 
     def _ask_model_for_action(self, task: Task, context: str) -> dict[str, Any] | None:
         """Попросить модель определить следующее действие. Возвращает dict или None."""
-        prompt = (
-            f"{context}\n\n"
-            "Определи следующее действие. Ответь в формате JSON:\n"
-            '{"tool": "имя_инструмента_или_null, "arguments": {...}, "finish": true/false, "answer": "текст ответа"}\n'
-            "Если инструменты не нужны, установи finish: true и answer."
+        from .formats import PromptTemplate, StructuredResponse
+
+        template = PromptTemplate(
+            system_prompt="Ты помощник, который планирует действия и использует инструменты. Отвечай в формате JSON.",
+            context=context,
+            user_message=(
+                "Определи следующее действие. Ответь в формате JSON:\n"
+                '{"tool": "имя_инструмента_или_null", "arguments": {...}, "finish": true/false, "answer": "текст ответа"}\n'
+                "Если инструменты не нужны, установи finish: true и answer."
+            ),
         )
+        prompt = template.render()
         caps = self.model.capabilities()
         result = self.model.generate(
             prompt=prompt,
-            system_prompt="Ты помощник, который планирует действия и использует инструменты.",
+            system_prompt=None,
             max_tokens=256,
             temperature=0.3,
         )
         if result.status != Status.OK or not result.data:
             return None
         text = result.data if isinstance(result.data, str) else str(result.data)
-        # Пытаемся распарсить JSON; если не получается — считаем ответом
+
+        # Парсим через StructuredResponse
+        structured = StructuredResponse.parse(text)
+        if structured.tool_calls:
+            tc = structured.tool_calls[0]
+            return {
+                "tool": tc.name if tc.name else None,
+                "arguments": tc.arguments,
+                "finish": False,
+                "answer": structured.answer,
+            }
+        if structured.answer:
+            return {"tool": None, "arguments": {}, "finish": True, "answer": structured.answer}
+
+        # Fallback: пытаемся распарсить JSON
         import json as _json
 
         try:
