@@ -131,6 +131,14 @@ def run_cli(args: Any, config: Config) -> int:
             error_monitor=ErrorMonitor(),
             guard_engine=GuardEngine(),
         )
+
+        # Загрузка опыта из журнала
+        try:
+            loaded = orch.experience_store.load_from_journal(str(config.db_path))
+            if loaded > 0:
+                print(f"Загружено {loaded} записей опыта из журнала.")
+        except Exception:  # noqa: BLE001
+            pass
     except Exception as exc:  # noqa: BLE001
         print(f"Ошибка инициализации: {exc}")
         return 1
@@ -159,6 +167,8 @@ def run_cli(args: Any, config: Config) -> int:
         return _not_supported("mem-clear (архивация)")
     if cmd == "diagnostics":
         return _cmd_diagnostics(orch)
+    if cmd == "experience":
+        return _cmd_experience(orch, args)
     if cmd == "eval":
         return _cmd_eval(orch, args, config)
     if cmd == "tools":
@@ -407,6 +417,62 @@ def _cmd_eval(orch: Orchestrator, args: Any, config: Config) -> int:
         pass
 
     return 0
+
+
+def _cmd_experience(orch: Orchestrator, args: Any) -> int:
+    store = orch.experience_store
+    action = args.action or "stats"
+    limit = args.limit or 10
+
+    if action == "stats":
+        stats = store.stats()
+        print("=== Статистика опыта ===")
+        print(f"Всего записей: {stats['total']}")
+        print(f"По качеству: {stats['by_quality']}")
+        print(f"Переиспользуемых: {stats['reusable']}")
+        print(f"С ошибками: {stats['with_errors']}")
+        print(f"Обучающих примеров: {stats['training_examples']}")
+        print(f"Повторяющихся задач: {stats['recurring_tasks']}")
+        return 0
+
+    if action == "list":
+        exps = store._experiences[-limit:]
+        if not exps:
+            print("Опыт пуст.")
+            return 0
+        for e in exps:
+            print(f"[{e.id[:8]}] {e.quality.value} | {str(e.input_conditions)[:60]}")
+            if e.final_answer:
+                print(f"      ответ: {str(e.final_answer)[:80]}")
+            if e.errors:
+                print(f"      ошибки: {e.errors}")
+        return 0
+
+    if action == "confirmed":
+        exps = store.confirmed_only()
+        print(f"Подтверждённые опыты: {len(exps)}")
+        for e in exps[-limit:]:
+            print(f"  [{e.id[:8]}] {str(e.input_conditions)[:60]}")
+        return 0
+
+    if action == "failed":
+        exps = store.failed_only()
+        print(f"Неудачные опыты: {len(exps)}")
+        for e in exps[-limit:]:
+            print(f"  [{e.id[:8]}] {str(e.input_conditions)[:60]} | ошибки: {e.errors}")
+        return 0
+
+    if action == "training":
+        examples = store.training_examples()
+        print(f"Обучающие примеры: {len(examples)}")
+        for ex in examples[-limit:]:
+            print(f"  input: {str(ex['input'])[:60]}")
+            print(f"  output: {str(ex['output'])[:60]}")
+            print(f"  quality: {ex['quality']}, source: {ex['source']}")
+        return 0
+
+    print(f"Неизвестное действие: {action}. Используйте stats, list, confirmed, failed, training.")
+    return 1
 
 
 def _cmd_diagnostics(orch: Orchestrator) -> int:

@@ -67,6 +67,15 @@ class Orchestrator:
         self.guard_engine = guard_engine or GuardEngine()
         self._tasks: dict[str, Task] = {}
         self._current: Task | None = None
+        self._experience_store = None  # ленивая инициализация
+
+    @property
+    def experience_store(self):
+        if self._experience_store is None:
+            from adaptive_ai.learning.experience import ExperienceStore
+
+            self._experience_store = ExperienceStore()
+        return self._experience_store
 
     # ------------------------------------------------------------------ #
     # Задачи
@@ -308,10 +317,41 @@ class Orchestrator:
                     "error": task.error,
                     "used_tools": task.used_tools,
                     "retrieved_memory": task.retrieved_memory,
+                    "retrieved_sources": task.retrieved_sources,
                 },
                 source_id=f"orchestrator:{task.id}",
             )
             journal.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Создание записи опыта
+        try:
+            from adaptive_ai.learning.experience import create_experience_from_task, ExperienceQuality
+
+            # Определяем качество
+            if task.status.value == "completed" and task.result:
+                quality = ExperienceQuality.CONFIRMED
+            elif task.status.value == "failed":
+                quality = ExperienceQuality.FAILED
+            elif task.result:
+                quality = ExperienceQuality.PARTIAL
+            else:
+                quality = ExperienceQuality.UNKNOWN
+
+            exp = create_experience_from_task(task, quality=quality)
+            # Определяем уровень коррекции
+            if task.error and "tool" in (task.error or "").lower():
+                exp.correction_level = CorrectionLevel.SKILL
+            elif task.error:
+                exp.correction_level = CorrectionLevel.MEMORY
+
+            # Сохраняем в ExperienceStore (если доступен)
+            if self._experience_store is None:
+                from adaptive_ai.learning.experience import ExperienceStore
+
+                self._experience_store = ExperienceStore()
+            self._experience_store.add(exp)
         except Exception:  # noqa: BLE001
             pass
 
