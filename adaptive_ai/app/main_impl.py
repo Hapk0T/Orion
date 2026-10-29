@@ -9,6 +9,7 @@ from .config import Config
 
 try:  # зависимости ядра импортируются лениво, чтобы CLI запускался даже без модели
     from adaptive_ai.core.contracts import (
+        FactStatus,
         ModelBackend,
         ModelCapabilities,
         Status,
@@ -134,6 +135,12 @@ def run_cli(args: Any, config: Config) -> int:
         return _cmd_mem_search(orch, args)
     if cmd == "mem-view":
         return _cmd_mem_view(orch, args)
+    if cmd == "mem-add":
+        return _cmd_mem_add(orch, args)
+    if cmd == "mem-update":
+        return _cmd_mem_update(orch, args)
+    if cmd == "mem-delete":
+        return _cmd_mem_delete(orch, args)
     if cmd == "mem-clear":
         return _not_supported("mem-clear (архивация)")
     if cmd == "diagnostics":
@@ -220,6 +227,52 @@ def _cmd_mem_search(orch: Orchestrator, args: Any) -> int:
     for item in items:
         src = f" [источник: {item.source}]" if item.source else ""
         print(f"[{item.id}] {item.content[:120]}{src} | статус: {item.fact_status.value}")
+    return 0
+
+
+def _cmd_mem_add(orch: Orchestrator, args: Any) -> int:
+    from adaptive_ai.core.contracts import MemoryItem
+
+    try:
+        fact_status = FactStatus(args.status)
+    except ValueError:
+        fact_status = FactStatus.USER_CLAIM
+
+    item = MemoryItem(
+        id="",  # будет сгенерирован в SqliteMemoryStore
+        type=args.type,
+        content=args.content,
+        source=args.source,
+        entity_id=args.entity,
+        fact_status=fact_status,
+    )
+    # Генерируем id
+    import uuid
+
+    item.id = str(uuid.uuid4())
+    res = orch.memory.save_fact(item)
+    if res.status == "ok":
+        print(f"Факт сохранён: id={res.data.get('id', item.id)}")
+    else:
+        print(f"Ошибка: {res.error}")
+    return 0
+
+
+def _cmd_mem_update(orch: Orchestrator, args: Any) -> int:
+    res = orch.memory.update(args.id, content=args.content)
+    if res.status == "ok":
+        print(f"Запись {args.id} обновлена.")
+    else:
+        print(f"Ошибка: {res.error}")
+    return 0
+
+
+def _cmd_mem_delete(orch: Orchestrator, args: Any) -> int:
+    res = orch.memory.delete(args.id)
+    if res.status == "ok":
+        print(f"Запись {args.id} удалена.")
+    else:
+        print(f"Ошибка: {res.error}")
     return 0
 
 

@@ -138,6 +138,8 @@ class SqliteMemoryStore(MemoryStore):
 
     def save_fact(self, item: MemoryItem) -> TaskResult:
         try:
+            if not item.id:
+                item.id = self._uuid()
             self._conn.execute(
                 """INSERT INTO facts
                    (id, type, value, entity_id, source, created_at, valid_from, valid_until,
@@ -170,8 +172,10 @@ class SqliteMemoryStore(MemoryStore):
     def search(self, query: str, limit: int = 10) -> list[MemoryItem]:
         """Полнотекстовый поиск по эпизодам и фактам."""
         results: list[MemoryItem] = []
+        seen_ids: set[str] = set()
         try:
             cur = self._conn.cursor()
+            # Поиск по эпизодам
             cur.execute(
                 """SELECT e.id, e.content, e.source, e.created_at
                    FROM episodes_fts f
@@ -181,20 +185,46 @@ class SqliteMemoryStore(MemoryStore):
                 (query, limit),
             )
             for row in cur.fetchall():
-                results.append(
-                    MemoryItem(
-                        id=row["id"],
-                        type="episode",
-                        content=row["content"],
-                        source=row["source"],
-                        created_at=row["created_at"],
-                        tags=[],
-                        fact_status=FactStatus.USER_CLAIM,
+                if row["id"] not in seen_ids:
+                    seen_ids.add(row["id"])
+                    results.append(
+                        MemoryItem(
+                            id=row["id"],
+                            type="episode",
+                            content=row["content"],
+                            source=row["source"],
+                            created_at=row["created_at"],
+                            tags=[],
+                            fact_status=FactStatus.USER_CLAIM,
+                        )
                     )
-                )
+            # Поиск по фактам
+            cur.execute(
+                """SELECT fct.id, fct.value, fct.source, fct.created_at, fct.fact_status, fct.entity_id
+                   FROM facts_fts f
+                   JOIN facts fct ON fct.id = f.fact_id
+                   WHERE facts_fts MATCH ?
+                   ORDER BY rank LIMIT ?""",
+                (query, limit),
+            )
+            for row in cur.fetchall():
+                if row["id"] not in seen_ids:
+                    seen_ids.add(row["id"])
+                    results.append(
+                        MemoryItem(
+                            id=row["id"],
+                            type="fact",
+                            content=row["value"],
+                            source=row["source"],
+                            entity_id=row["entity_id"],
+                            created_at=row["created_at"],
+                            fact_status=FactStatus(row["fact_status"]),
+                            tags=[],
+                        )
+                    )
         except Exception:  # noqa: BLE001
             pass
-        return results
+        return results[:limit]
 
     def get(self, item_id: str) -> MemoryItem | None:
         try:

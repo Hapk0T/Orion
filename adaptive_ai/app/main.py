@@ -37,6 +37,20 @@ def build_parser() -> argparse.ArgumentParser:
     mem_view = sub.add_parser("mem-view", help="Просмотр конкретной записи")
     mem_view.add_argument("id", help="Идентификатор записи")
 
+    mem_add = sub.add_parser("mem-add", help="Добавить факт в память")
+    mem_add.add_argument("content", help="Содержимое факта")
+    mem_add.add_argument("--type", default="fact", help="Тип факта (fact, hypothesis, etc.)")
+    mem_add.add_argument("--status", default="user_claim", help="Статус достоверности")
+    mem_add.add_argument("--source", default=None, help="Источник")
+    mem_add.add_argument("--entity", default=None, help="Связанная сущность")
+
+    mem_update = sub.add_parser("mem-update", help="Исправить запись")
+    mem_update.add_argument("id", help="Идентификатор записи")
+    mem_update.add_argument("content", help="Новое содержимое")
+
+    mem_delete = sub.add_parser("mem-delete", help="Удалить запись")
+    mem_delete.add_argument("id", help="Идентификатор записи")
+
     sub.add_parser("mem-clear", help="Очистить некритические временные записи (только архивация)")
 
     sub.add_parser("diagnostics", help="Запуск диагностических тестов")
