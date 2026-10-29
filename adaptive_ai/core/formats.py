@@ -69,6 +69,7 @@ class StructuredResponse:
     """Структурированный ответ модели."""
 
     thinking: ThinkingBlock | None = None
+    thinking_stages: list[str] = field(default_factory=list)
     answer: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     raw_text: str = ""
@@ -86,17 +87,18 @@ class StructuredResponse:
         """Парсить структурированный ответ из текста модели."""
         resp = cls(raw_text=text)
 
-        # Извлекаем <think> блок
-        think_match = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
-        if think_match:
-            resp.thinking = ThinkingBlock(content=think_match.group(1).strip())
+        # Извлекаем блоки думаю: (многоэтапное размышление)
+        thinking_matches = re.findall(r"думаю:\s*\n?(.*?)(?=думаю:|ответ:|$)", text, re.DOTALL)
+        if thinking_matches:
+            combined = "\n---\n".join(t.strip() for t in thinking_matches if t.strip())
+            resp.thinking = ThinkingBlock(content=combined)
+            # Последний этап — это финальное размышление перед ответом
+            resp.thinking_stages = [t.strip() for t in thinking_matches if t.strip()]
 
-        # Извлекаем <answer> блок
-        answer_match = re.search(r"<answer>(.*?)</answer>", text, re.DOTALL)
+        # Извлекаем ответ: блок
+        answer_match = re.search(r"ответ:\s*\n?(.*)", text, re.DOTALL)
         if answer_match:
             resp.answer = answer_match.group(1).strip()
-        elif think_match:
-            resp.answer = text[think_match.end():].strip()
         # Иначе не устанавливаем answer — попробуем JSON парсинг ниже
 
         # Извлекаем tool_calls

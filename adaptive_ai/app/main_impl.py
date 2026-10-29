@@ -221,6 +221,7 @@ def _cmd_chat(orch: Orchestrator, args: Any, config: Config) -> int:
             print("Ответ: ", end="", flush=True)
             for chunk in orch.model.generate_stream(
                 prompt=message,
+                system_prompt="Ты помощник. Формат ответа:\nдумаю: (размышления)\nответ: (ответ)",
                 max_tokens=config.max_tokens,
                 temperature=config.temperature,
                 top_p=config.top_p,
@@ -234,6 +235,7 @@ def _cmd_chat(orch: Orchestrator, args: Any, config: Config) -> int:
     print("Ответ: ", end="", flush=True)
     for chunk in orch.model.generate_stream(
         prompt=message,
+        system_prompt="Ты помощник. Формат ответа:\nдумаю: (размышления)\nответ: (ответ)",
         max_tokens=config.max_tokens,
         temperature=config.temperature,
         top_p=config.top_p,
