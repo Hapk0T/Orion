@@ -63,6 +63,7 @@ class Config:
 
     # Модель
     model_backend: str = "rwkv_cpp"
+    model_name: str = "auto"
     model_path: str | None = None
 
     # Оркестратор
@@ -147,9 +148,29 @@ class Config:
 
         # Модель
         self.model_backend = get("model", "backend", self.model_backend)
+        self.model_name = get("model", "model_name", self.model_name)
         mp = get("model", "path", "auto")
         if mp and mp != "auto" and mp != "None":
             self.model_path = mp
+        elif self.model_name and self.model_name != "auto":
+            # Используем указанное имя модели
+            candidate = self.models_dir / self.model_name
+            if candidate.exists():
+                self.model_path = str(candidate)
+            else:
+                candidate_bin = self.models_dir / (self.model_name if self.model_name.endswith(".bin") else self.model_name + ".bin")
+                if candidate_bin.exists():
+                    self.model_path = str(candidate_bin)
+                else:
+                    # Автовыбор с кэшированием
+                    try:
+                        from adaptive_ai.models.model_selector import select_model_with_cache
+
+                        best = select_model_with_cache(self.models_dir, ram_budget_ratio=self.max_ram_ratio)
+                        if best is not None:
+                            self.model_path = best.path
+                    except Exception:  # noqa: BLE001
+                        pass
         elif self.model_path is None:
             # Автовыбор с кэшированием
             try:

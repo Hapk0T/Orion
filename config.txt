@@ -9,7 +9,9 @@
 [model]
 # Бэкенд модели: rwkv_cpp, rwkv_pytorch, fallback
 backend = rwkv_cpp
-# Путь к модели (.bin). "auto" — автоматический выбор по бюджету ОЗУ
+# Имя файла модели в папке models/ (без пути). "auto" — автоматический выбор по бюджету ОЗУ
+model_name = auto
+# Путь к модели (.bin). "auto" — автоматический выбор по бюджету ОЗУ (переопределяет model_name)
 path = auto
 # Путь к библиотеке rwkv.cpp (пусто = автопоиск)
 library_path =
